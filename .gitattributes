@@ -1,2 +1,0 @@
-# Keep git hook scripts as LF so the shell shebang works on all platforms
-.husky/** text eol=lf

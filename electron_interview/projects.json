@@ -1,0 +1,75 @@
+{
+  "introduction": {
+    "name": "Your Name",
+    "title": "Senior Software Engineer",
+    "summary": "Senior software engineer with X years of experience building full-stack and cloud applications. Strong background in TypeScript, React, Node.js, and distributed systems. Led design and delivery of production systems serving thousands of users. Passionate about clean architecture, performance, and developer experience.",
+    "skills": ["TypeScript", "React", "Node.js", "PostgreSQL", "AWS", "Docker", "Kubernetes"]
+  },
+  "projects": [
+    {
+      "id": "ecommerce-platform",
+      "type": "Project",
+      "title": "E-commerce Platform",
+      "description": "A scalable e-commerce storefront with cart, checkout, and order management.",
+      "tags": ["ecommerce", "fullstack"],
+      "keywords": ["ecommerce", "commerce", "store", "order", "cart", "checkout", "product"],
+      "body": {
+        "role": "Full-stack Engineer",
+        "duration": "2024-2025",
+        "techStack": ["React", "TypeScript", "Node.js", "PostgreSQL", "Redis", "Docker"],
+        "architecture": [
+          "React SPA frontend with server-side rendering for SEO.",
+          "REST API backend split into product, cart, checkout, and order services.",
+          "PostgreSQL for transactional data, Redis for cart sessions and caching.",
+          "Message queue for order processing and inventory updates."
+        ],
+        "features": [
+          "Product catalog with search and faceted filtering.",
+          "Cart and checkout flow with payment gateway integration.",
+          "Order tracking and email notifications.",
+          "Admin dashboard for inventory and pricing."
+        ],
+        "challenges": [
+          "Keeping cart and inventory consistent under concurrent load.",
+          "Reducing checkout latency through caching and eager payments."
+        ],
+        "accomplishments": [
+          "Handled 10x peak traffic with no downtime.",
+          "Reduced checkout time by 40% through caching."
+        ]
+      }
+    },
+    {
+      "id": "real-time-chat",
+      "type": "Project",
+      "title": "Real-Time Chat Application",
+      "description": "A real-time messaging platform with presence, typing indicators, and group rooms.",
+      "tags": ["chat", "realtime", "websocket"],
+      "keywords": ["chat", "messaging", "message", "realtime", "real time", "websocket", "socket"],
+      "body": {
+        "role": "Backend Engineer",
+        "duration": "2023-2024",
+        "techStack": ["Node.js", "TypeScript", "WebSocket", "Redis", "MongoDB", "AWS"],
+        "architecture": [
+          "WebSocket gateway for persistent connections.",
+          "Redis pub/sub for horizontal fan-out across gateway instances.",
+          "MongoDB for message persistence with TTL indexes.",
+          "Presence and typing indicators driven by ephemeral Redis state."
+        ],
+        "features": [
+          "One-to-one and group messaging.",
+          "Delivery and read receipts.",
+          "Online presence and typing indicators."
+        ],
+        "challenges": [
+          "Ensuring message ordering under reconnection.",
+          "Scaling WebSocket connections across multiple instances."
+        ],
+        "accomplishments": [
+          "Supported 50k concurrent connections per cluster.",
+          "Delivered messages with p99 latency under 200ms."
+        ]
+      }
+    }
+  ]
+}

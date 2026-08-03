@@ -1,0 +1,11 @@
+{
+  "name": "interview-answer",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

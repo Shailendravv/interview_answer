@@ -1,0 +1,35 @@
+#!/bin/sh
+
+# 0. Keep the existing quality gate first
+npm --prefix electron_interview run typecheck || exit 1
+
+# 1. Get a list of staged files (only .ts, .tsx, .js, .jsx)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
+
+# 2. If no code files are staged, skip doc update
+if [ -z "$STAGED_FILES" ]; then
+  echo "No code files staged. Skipping documentation update."
+  exit 0
+fi
+
+# 2b. Skip gracefully if opencode isn't on PATH (e.g. CI)
+if ! command -v opencode >/dev/null 2>&1; then
+  echo "opencode not found in PATH. Skipping documentation update."
+  exit 0
+fi
+
+echo "🤖 Running OpenCode to sync Living Documentation..."
+
+# 3. Run OpenCode to analyze the staged diff and update the docs
+DIFF=$(git diff --cached | head -n 200)
+
+if opencode run "I am about to commit some code changes. Here is the git diff of the staged changes:
+ $DIFF
+
+Please analyze these changes. Open 'electron_interview/docs/ARCHITECTURE.md' and update the relevant sections to accurately reflect these new code changes. Only edit the markdown file. Do not touch the code files."; then
+  echo "✅ Documentation updated (local only, not staged)."
+else
+  echo "⚠️ opencode run failed. Commit continues without documentation sync."
+fi
+
+exit 0

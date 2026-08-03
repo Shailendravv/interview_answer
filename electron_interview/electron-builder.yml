@@ -1,0 +1,38 @@
+appId: com.interview-answer
+productName: Interview Answer
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+asar: true
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+npmRebuild: true
+extraResources:
+  - from: ../whisper.cpp/models/ggml-small.en.bin
+    to: whisper.cpp/models/ggml-small.en.bin
+  - from: ../whisper.cpp/build/bin/Release/whisper-cli.exe
+    to: whisper.cpp/build/bin/Release/whisper-cli.exe
+  - from: ../whisper.cpp/build/bin/Release/whisper-server.exe
+    to: whisper.cpp/build/bin/Release/whisper-server.exe
+  - from: ../whisper.cpp/build/bin/Release/whisper.dll
+    to: whisper.cpp/build/bin/Release/whisper.dll
+  - from: ../whisper.cpp/build/bin/Release/ggml.dll
+    to: whisper.cpp/build/bin/Release/ggml.dll
+  - from: ../whisper.cpp/build/bin/Release/ggml-base.dll
+    to: whisper.cpp/build/bin/Release/ggml-base.dll
+  - from: ../whisper.cpp/build/bin/Release/ggml-cpu.dll
+    to: whisper.cpp/build/bin/Release/ggml-cpu.dll
+  - from: ../whisper.cpp/build/bin/Release/MSVCP140.dll
+    to: whisper.cpp/build/bin/Release/MSVCP140.dll
+  - from: ../whisper.cpp/build/bin/Release/VCRUNTIME140.dll
+    to: whisper.cpp/build/bin/Release/VCRUNTIME140.dll
+  - from: ../whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
+    to: whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
+  - from: ../whisper.cpp/build/bin/Release/VCOMP140.DLL
+    to: whisper.cpp/build/bin/Release/VCOMP140.DLL
+win:
+  target:
+    - nsis
+    - portable

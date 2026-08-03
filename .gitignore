@@ -1,0 +1,12 @@
+# whisper.cpp is a separate repo / large build tree — keep it out of this repo
+whisper.cpp/
+
+# Root tooling (husky) dependencies
+node_modules/
+
+# CodeGraph SQLite DB
+electron_interview/.codegraph/
+electron_interview/.opencode/
+
+# Local-only living architecture doc (updated by pre-commit hook, never pushed)
+electron_interview/docs/ARCHITECTURE.md

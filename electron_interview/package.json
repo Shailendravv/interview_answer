@@ -1,5 +1,5 @@
 {
-  "name": "interview-answer",
+  "name": "Lenvo-vantage-service",
   "version": "0.1.0",
   "description": "Real-Time AI Interview Assistant",
   "main": "./out/main/index.js",

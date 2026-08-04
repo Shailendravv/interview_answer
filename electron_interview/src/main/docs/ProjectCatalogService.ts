@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { readFileSync, watch, FSWatcher } from 'fs'
+import { readFileSync, watch, existsSync, copyFileSync, FSWatcher } from 'fs'
 import { join } from 'path'
 import {
   ProjectBundle,
@@ -40,6 +40,19 @@ export class ProjectCatalogService {
   }
 
   private resolveJsonPath(): string {
+    if (app.isPackaged) {
+      const userDataPath = join(app.getPath('userData'), 'projects.json')
+      if (existsSync(userDataPath)) return userDataPath
+      const bundledPath = join(process.resourcesPath, 'projects.json')
+      if (existsSync(bundledPath)) {
+        try {
+          copyFileSync(bundledPath, userDataPath)
+          return userDataPath
+        } catch { /* fall through to bundled (read-only) */ }
+      }
+      return userDataPath
+    }
+
     const candidates = [
       join(app.getAppPath(), 'projects.json'),
       join(__dirname, '../../projects.json'),

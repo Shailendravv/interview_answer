@@ -1,73 +1,439 @@
 {
   "introduction": {
-    "name": "Your Name",
-    "title": "Senior Software Engineer",
-    "summary": "Senior software engineer with X years of experience building full-stack and cloud applications. Strong background in TypeScript, React, Node.js, and distributed systems. Led design and delivery of production systems serving thousands of users. Passionate about clean architecture, performance, and developer experience.",
-    "skills": ["TypeScript", "React", "Node.js", "PostgreSQL", "AWS", "Docker", "Kubernetes"]
+    "name": "Shailendra Singh Cahauhan",
+    "title": "Full-Stack Developer | React, Next.js, Node.js | AI & Agentic Systems",
+    "summary": "Full-stack software engineer with 4+ years of experience building scalable web, mobile, and desktop applications. Proficient in React.js, Next.js, React Native, Node.js, and FastAPI, with deep expertise in Generative and Agentic AI — integrating LLMs (OpenAI, Claude, Vertex AI), orchestrating agentic workflows with LangChain and LangGraph, and building RAG and OCR/PDF data-extraction pipelines. Experienced with enterprise integrations (SharePoint, SAP), cloud deployment (AWS, GCP, Azure), and database optimization (MongoDB, PostgreSQL).",
+    "skills": [
+      "React.js",
+      "Next.js",
+      "React Native",
+      "TypeScript",
+      "Node.js",
+      "Express.js",
+      "FastAPI",
+      "Python",
+      "OpenAI",
+      "Claude",
+      "Vertex AI",
+      "LangChain",
+      "LangGraph",
+      "RAG",
+      "Agentic AI",
+      "MongoDB",
+      "PostgreSQL",
+      "AWS",
+      "Docker",
+      "Redux Toolkit",
+      "Tailwind CSS",
+      "Material UI"
+    ]
   },
   "projects": [
     {
-      "id": "ecommerce-platform",
+      "id": "financial-automation",
       "type": "Project",
-      "title": "E-commerce Platform",
-      "description": "A scalable e-commerce storefront with cart, checkout, and order management.",
-      "tags": ["ecommerce", "fullstack"],
-      "keywords": ["ecommerce", "commerce", "store", "order", "cart", "checkout", "product"],
+      "title": "Financial Automation Platform",
+      "description": "AI-driven finance automation platform for AR reconciliation, transaction matching, and Human-in-the-Loop validation (CBRE).",
+      "tags": ["finance", "genai", "fullstack"],
+      "keywords": [
+        "finance",
+        "automation",
+        "remittance",
+        "transaction matching",
+        "accounts receivable",
+        "AR aging",
+        "bank statement",
+        "HITL",
+        "CBRE",
+        "vertex ai"
+      ],
       "body": {
-        "role": "Full-stack Engineer",
-        "duration": "2024-2025",
-        "techStack": ["React", "TypeScript", "Node.js", "PostgreSQL", "Redis", "Docker"],
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": [
+          "Next.js",
+          "Tailwind CSS",
+          "FastAPI",
+          "Python",
+          "Vertex AI",
+          "OpenAI",
+          "SharePoint API",
+          "AWS"
+        ],
         "architecture": [
-          "React SPA frontend with server-side rendering for SEO.",
-          "REST API backend split into product, cart, checkout, and order services.",
-          "PostgreSQL for transactional data, Redis for cart sessions and caching.",
-          "Message queue for order processing and inventory updates."
+          "Next.js full-stack frontend with Tailwind CSS for real-time AR visualization.",
+          "FastAPI backend with Python services for transaction matching and exception handling.",
+          "SharePoint-based bank statement ingestion pipeline feeding LLM workflows.",
+          "Vertex AI-powered LLM workflows with Human-in-the-Loop validation gates.",
+          "Cloud-deployed infrastructure for scalability, reliability, and high availability."
         ],
         "features": [
-          "Product catalog with search and faceted filtering.",
-          "Cart and checkout flow with payment gateway integration.",
-          "Order tracking and email notifications.",
-          "Admin dashboard for inventory and pricing."
+          "Real-time AR aging analysis and transaction monitoring.",
+          "Automated remittance matching with intelligent exception handling.",
+          "Advanced filtering and financial visibility dashboards.",
+          "Human-in-the-Loop review for ambiguous transactions."
         ],
         "challenges": [
-          "Keeping cart and inventory consistent under concurrent load.",
-          "Reducing checkout latency through caching and eager payments."
+          "Accurately matching remittances against open invoices at scale.",
+          "Designing HITL flows that keep humans in control of exceptions."
         ],
         "accomplishments": [
-          "Handled 10x peak traffic with no downtime.",
-          "Reduced checkout time by 40% through caching."
+          "End-to-end delivery of a production finance automation platform."
         ]
       }
     },
     {
-      "id": "real-time-chat",
+      "id": "sales-intelligence",
       "type": "Project",
-      "title": "Real-Time Chat Application",
-      "description": "A real-time messaging platform with presence, typing indicators, and group rooms.",
-      "tags": ["chat", "realtime", "websocket"],
-      "keywords": ["chat", "messaging", "message", "realtime", "real time", "websocket", "socket"],
+      "title": "Sales Intelligence Platform",
+      "description": "AI-powered sales platform that analyzes customer data, generates personalized communication, and improves client engagement with data-driven insights (VEOLIA).",
+      "tags": ["sales", "genai", "fullstack"],
+      "keywords": [
+        "sales",
+        "intelligence",
+        "crm",
+        "email generation",
+        "chatbot",
+        "client engagement",
+        "dashboard",
+        "VEOLIA",
+        "speech assistance"
+      ],
       "body": {
-        "role": "Backend Engineer",
-        "duration": "2023-2024",
-        "techStack": ["Node.js", "TypeScript", "WebSocket", "Redis", "MongoDB", "AWS"],
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": [
+          "React.js",
+          "Material UI",
+          "FastAPI",
+          "Python",
+          "Pandas",
+          "NumPy",
+          "OpenAI",
+          "Claude"
+        ],
         "architecture": [
-          "WebSocket gateway for persistent connections.",
-          "Redis pub/sub for horizontal fan-out across gateway instances.",
-          "MongoDB for message persistence with TTL indexes.",
-          "Presence and typing indicators driven by ephemeral Redis state."
+          "React.js frontend with Material UI for interactive dashboards and client detail views.",
+          "FastAPI backend services for data processing and AI-powered features.",
+          "Pandas and NumPy pipelines to transform large-scale Excel datasets.",
+          "Integrated AI features for contextual email generation and client-specific chatbots."
         ],
         "features": [
-          "One-to-one and group messaging.",
-          "Delivery and read receipts.",
-          "Online presence and typing indicators."
+          "Trend analysis and product-level drill-downs.",
+          "Contextual email generation and speech assistance.",
+          "Client-specific chatbot interactions for real-time sales queries.",
+          "Advanced filtering, search, and visualization of customer data."
         ],
         "challenges": [
-          "Ensuring message ordering under reconnection.",
-          "Scaling WebSocket connections across multiple instances."
+          "Processing and transforming very large Excel datasets efficiently.",
+          "Generating personalized, context-aware client communication."
         ],
         "accomplishments": [
-          "Supported 50k concurrent connections per cluster.",
-          "Delivered messages with p99 latency under 200ms."
+          "Shipped a production AI sales platform improving client engagement."
+        ]
+      }
+    },
+    {
+      "id": "llm-playground",
+      "type": "Project",
+      "title": "Multi-LLM Comparison Platform",
+      "description": "Unified platform to evaluate and compare outputs from multiple AI models across LLM chat, Docs-RAG, Image-RAG, image generation, and video generation (Allucent).",
+      "tags": ["genai", "llm", "fullstack"],
+      "keywords": [
+        "llm",
+        "model comparison",
+        "playground",
+        "docs rag",
+        "image rag",
+        "image generation",
+        "video generation",
+        "DALL·E",
+        "Perplexity",
+        "Allucent"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": [
+          "React.js",
+          "Material UI",
+          "FastAPI",
+          "Python",
+          "OpenAI",
+          "DALL·E",
+          "Perplexity",
+          "AWS"
+        ],
+        "architecture": [
+          "React.js frontend with Material UI for a unified comparison interface.",
+          "FastAPI backend services for AI evaluation and generation workflows.",
+          "Integrated APIs including DALL·E and Perplexity for real-time content generation.",
+          "Deployed on AWS for scalability, reliability, and high performance."
+        ],
+        "features": [
+          "Vanilla LLM interactions across multiple models.",
+          "Docs-RAG and Image-RAG retrieval flows.",
+          "Image generation and video generation workflows.",
+          "Side-by-side evaluation and comparison of model outputs."
+        ],
+        "challenges": [
+          "Normalizing heterogeneous AI outputs into a common comparison format.",
+          "Supporting multiple heavy generation workloads reliably."
+        ],
+        "accomplishments": [
+          "Built a scalable multi-LLM evaluation platform on AWS."
+        ]
+      }
+    },
+    {
+      "id": "biomedical-research",
+      "type": "Project",
+      "title": "Biomedical Research Platform",
+      "description": "AI-powered platform for multi-paper summarization, protocol insights, and topic modelling to support advanced scientific analysis (Genentech).",
+      "tags": ["research", "genai", "fullstack"],
+      "keywords": [
+        "biomedical",
+        "research",
+        "paper summarization",
+        "multi paper",
+        "topic modelling",
+        "protocol",
+        "Genentech",
+        "scientific"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": [
+          "React.js",
+          "Tailwind CSS",
+          "Redux Toolkit",
+          "FastAPI",
+          "Python",
+          "AWS"
+        ],
+        "architecture": [
+          "React.js frontend with Tailwind CSS and Redux Toolkit for research data visualization.",
+          "FastAPI backend for protocol summaries, topic modelling, and AI research workflows.",
+          "Seamless frontend-backend integration for research data interaction.",
+          "AWS-deployed components for scalable, reliable operations."
+        ],
+        "features": [
+          "Multi-paper summarization for scientific literature.",
+          "Protocol insights and topic modelling.",
+          "Responsive research data visualization and interaction."
+        ],
+        "challenges": [
+          "Synthesizing insights across many research papers accurately.",
+          "Keeping research workflows scalable and reliable."
+        ],
+        "accomplishments": [
+          "Delivered a scalable AI biomedical research platform on AWS."
+        ]
+      }
+    },
+    {
+      "id": "data-insight",
+      "type": "Project",
+      "title": "Data Insight – Conversational Data Platform",
+      "description": "AI chatbot that interprets natural-language queries, generates SQL, and returns data as tables, charts, and visual insights for non-technical users (Deluxe).",
+      "tags": ["chatbot", "genai", "data"],
+      "keywords": [
+        "chatbot",
+        "sql generation",
+        "text to sql",
+        "data",
+        "database",
+        "dashboard",
+        "visualization",
+        "Deluxe",
+        "conversational"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": ["React.js", "Node.js", "LLM", "SQL", "Backend API"],
+        "architecture": [
+          "LLM layer interprets queries and generates SQL commands.",
+          "Secured backend APIs enable dynamic, authenticated database access.",
+          "Structured results rendered as tables, charts, and visual insights."
+        ],
+        "features": [
+          "Conversational natural-language data exploration.",
+          "Real-time visualization and SQL query previews.",
+          "Secure, dynamic database access for authorized users."
+        ],
+        "challenges": [
+          "Reliably translating natural language into correct SQL.",
+          "Presenting raw data transparently to non-technical users."
+        ],
+        "accomplishments": [
+          "Enabled non-technical users to query complex data with ease."
+        ]
+      }
+    },
+    {
+      "id": "agent-pulse",
+      "type": "Project",
+      "title": "Agent Pulse – CX Monitoring Platform",
+      "description": "Monitoring and evaluation platform giving supervisors actionable insights into agent performance, activities, and outcomes (Startek).",
+      "tags": ["analytics", "cx", "fullstack"],
+      "keywords": [
+        "agent",
+        "monitoring",
+        "evaluation",
+        "call center",
+        "performance",
+        "quality",
+        "cx",
+        "supervisor",
+        "Startek"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": ["React.js", "Node.js", "Express.js", "PostgreSQL"],
+        "architecture": [
+          "Frontend dashboard for supervisors to review agent activities and outcomes.",
+          "Backend tracking, analysis, and reporting on agent performance.",
+          "Comprehensive reporting builds accountability and quality insights."
+        ],
+        "features": [
+          "Tracks agent activities, interactions, and outcomes.",
+          "Comprehensive reporting and actionable insights.",
+          "Feedback and performance improvement workflows."
+        ],
+        "challenges": [
+          "Aggregating scattered agent data into one view.",
+          "Presenting actionable, non-overwhelming performance reports."
+        ],
+        "accomplishments": [
+          "Delivered a platform fostering accountability and quality."
+        ]
+      }
+    },
+    {
+      "id": "mrp-platform",
+      "type": "Project",
+      "title": "Manufacturing Resource Planning",
+      "description": "Material Requirements Planning (MRP) web application managing demand forecasting, inventory, production scheduling, and procurement (Rock).",
+      "tags": ["mrp", "manufacturing", "fullstack"],
+      "keywords": [
+        "mrp",
+        "manufacturing",
+        "material requirements planning",
+        "inventory",
+        "demand",
+        "procurement",
+        "production",
+        "supply chain",
+        "Rock"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": ["React.js", "Node.js", "Express.js", "PostgreSQL"],
+        "architecture": [
+          "Web application managing data for demand, and inventory, and production.",
+          "Financial workflows tied to demand forecasting and procurement.",
+          "Comprehensive view across the supply chain."
+        ],
+        "features": [
+          "Demand forecasting and inventory planning.",
+          "Production scheduling and procurement streamlining.",
+          "Comprehensive supply chain and inventory management."
+        ],
+        "challenges": [
+          "Forecasting demand accurately to avoid stockouts and excess inventory.",
+          "Coordinating production schedules across resources."
+        ],
+        "accomplishments": [
+          "Delivered an MRP solution reducing excess inventory and downtime."
+        ]
+      }
+    },
+    {
+      "id": "contract-lifecycle",
+      "type": "Project",
+      "title": "Contract Life Cycle Management",
+      "description": "Web platform for managing the full contract lifecycle with creation, templates, e-signatures, workflow automation, version control, and analytics (Legalbook).",
+      "tags": ["legal", "clm", "fullstack"],
+      "keywords": [
+        "contract",
+        "clm",
+        "legal",
+        "e-signature",
+        "template",
+        "workflow",
+        "version control",
+        "contract analytics",
+        "Legalbook"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": [
+          "React.js",
+          "Node.js",
+          "Express.js",
+          "PostgreSQL",
+          "E-Signature"
+        ],
+        "architecture": [
+          "Web platform managing the entire contract lifecycle end to end.",
+          "Backend with contract templates, workflow automation, and version control.",
+          "Analytics layer for contract insights across the organization."
+        ],
+        "features": [
+          "Contract creation and template management.",
+          "Electronic signatures and workflow automation.",
+          "Version control and contract analytics."
+        ],
+        "challenges": [
+          "Keeping contract versions consistent across collaborators.",
+          "Streamlining multi-party approval workflows."
+        ],
+        "accomplishments": [
+          "Delivered a seamless contract management solution for legal teams."
+        ]
+      }
+    },
+    {
+      "id": "home-automation",
+      "type": "Project",
+      "title": "Datafusion – Home Automation Platform",
+      "description": "Centralized platform for monitoring and controlling smart devices within the home, keeping pace with the growing home automation trend (NITU Singapore).",
+      "tags": ["iot", "homeautomation", "fullstack"],
+      "keywords": [
+        "home automation",
+        "smart home",
+        "iot",
+        "smart devices",
+        "device control",
+        "monitoring",
+        "Datafusion",
+        "NITU"
+      ],
+      "body": {
+        "role": "Full Stack Developer",
+        "duration": "",
+        "techStack": ["React.js", "Node.js", "IoT", "PostgreSQL"],
+        "architecture": [
+          "Centralized web platform for device discovery and control.",
+          "Integration layer to connect heterogeneous smart devices.",
+          "Monitoring layer to observe device status and state."
+        ],
+        "features": [
+          "Centralized monitoring of smart home devices.",
+          "Remote control of devices within the home.",
+          "Unified view across connected devices."
+        ],
+        "challenges": [
+          "Standardizing control across heterogeneous IoT device protocols.",
+          "Building a single cohesive set of controls for a growing device set."
+        ],
+        "accomplishments": [
+          "Delivered a centralized home automation control platform."
         ]
       }
     }

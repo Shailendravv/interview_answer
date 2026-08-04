@@ -10,3 +10,7 @@ electron_interview/.opencode/
 
 # Local-only living architecture doc (never pushed)
 electron_interview/docs/ARCHITECTURE.md
+
+
+# Project details file
+electron_interview/projects.example.json

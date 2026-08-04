@@ -38,3 +38,6 @@ coverage/
 
 # Local-only living architecture doc (never pushed)
 /docs/ARCHITECTURE.md
+
+# Project details file
+electron_interview/projects.example.json

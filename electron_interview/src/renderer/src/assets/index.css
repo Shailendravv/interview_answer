@@ -16,15 +16,8 @@ body {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
 }
 
-/* Screen-share stealth: no interactive element ever shows a pointer hand */
-button,
-[role="button"],
-select,
-input,
-textarea,
-a,
-summary,
-[tabindex] {
+/* Screen-share stealth: force default arrow cursor everywhere */
+* {
   cursor: default !important;
 }
 

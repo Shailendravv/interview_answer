@@ -17,6 +17,30 @@ function MarkdownBlock({ content }: { content: string }): JSX.Element {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
+        h1({ children }) {
+          return (
+            <h1 className="text-base font-bold text-emerald-300 mt-3 mb-1 border-b border-white/10 pb-0.5">
+              {children}
+            </h1>
+          );
+        },
+        h2({ children }) {
+          return (
+            <h2 className="text-sm font-bold text-emerald-400 mt-3 mb-1 border-b border-emerald-500/20 pb-0.5">
+              {children}
+            </h2>
+          );
+        },
+        h3({ children }) {
+          return (
+            <h3 className="text-xs font-semibold text-emerald-300 uppercase tracking-wide mt-2 mb-1">
+              {children}
+            </h3>
+          );
+        },
+        p({ children }) {
+          return <p className="text-sm text-gray-100 leading-relaxed mb-1">{children}</p>;
+        },
         code({ className, children, ...props }) {
           const isInline = !className;
           if (isInline) {
@@ -46,20 +70,20 @@ function MarkdownBlock({ content }: { content: string }): JSX.Element {
         },
         ul({ children }) {
           return (
-            <ul className="list-disc list-inside space-y-1 my-2 text-gray-100">
+            <ul className="list-disc list-inside space-y-1 my-1 text-gray-100">
               {children}
             </ul>
           );
         },
         ol({ children }) {
           return (
-            <ol className="list-decimal list-inside space-y-1 my-2 text-gray-100">
+            <ol className="list-decimal list-inside space-y-1 my-1 text-gray-100">
               {children}
             </ol>
           );
         },
         li({ children }) {
-          return <li className="text-gray-100">{children}</li>;
+          return <li className="text-gray-100 text-sm">{children}</li>;
         },
       }}
     >

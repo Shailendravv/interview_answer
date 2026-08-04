@@ -28,7 +28,7 @@ export interface ProjectListPayload {
 interface ProjectsViewProps {
   payload: ProjectListPayload;
   activeProjectId: string | null;
-  onUseProject: (id: string) => void;
+  onUseProject: (id: string | null) => void;
   onEditProjects: () => void;
 }
 
@@ -75,12 +75,22 @@ export function ProjectsView({
             </h2>
             <p className="text-xs text-gray-300">{introduction.title}</p>
           </div>
-          <button
-            onClick={onEditProjects}
-            className="px-3 py-1 text-xs bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-lg transition-colors border border-white/15"
-          >
-            Edit Projects
-          </button>
+          <div className="flex items-center gap-2">
+            {activeProjectId && (
+              <button
+                onClick={() => onUseProject(null)}
+                className="px-3 py-1 text-xs bg-red-600/20 hover:bg-red-500/40 text-red-300 backdrop-blur-md rounded-lg transition-colors border border-red-500/30"
+              >
+                Clear project
+              </button>
+            )}
+            <button
+              onClick={onEditProjects}
+              className="px-3 py-1 text-xs bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-lg transition-colors border border-white/15"
+            >
+              Edit Projects
+            </button>
+          </div>
         </div>
         {introduction.summary && (
           <p className="text-xs text-gray-200 mt-2 leading-relaxed">
@@ -112,14 +122,14 @@ export function ProjectsView({
                 <p className="text-xs text-gray-400">{p.description}</p>
               </div>
               <button
-                onClick={() => onUseProject(p.id)}
+                onClick={() => onUseProject(isActive ? null : p.id)}
                 className={`px-3 py-1 text-xs rounded-lg backdrop-blur-md transition-colors border ${
                   isActive
                     ? "bg-emerald-600/40 text-emerald-200 border-emerald-500/50"
                     : "bg-emerald-600/20 hover:bg-emerald-500/40 text-gray-100 border-white/15"
                 }`}
               >
-                {isActive ? "Active in assistant" : "Use in assistant"}
+                {isActive ? "✓ Active — click to deselect" : "Use in assistant"}
               </button>
             </div>
 

@@ -8,123 +8,7 @@ import { RetrievalService } from '../docs/RetrievalService'
 import { ProjectDocsService } from '../docs/ProjectDocsService'
 import { ProjectCatalogService } from '../docs/ProjectCatalogService'
 import { TokenBatcher } from '../llm/TokenBatcher'
-
-const BASE_SYSTEM_PROMPT = `
-You are a senior software engineer and interview assistant.
-
-Your primary goal is to help the candidate answer interview questions quickly, accurately, and naturally.
-
-Rules:
-- Give the answer immediately.
-- Do not repeat the question.
-- Do not add unnecessary introductions.
-- Keep answers concise unless the question explicitly requires detail.
-- Use bullet points where appropriate.
-- When explaining concepts, use simple language first, then provide technical details.
-- If multiple solutions exist, recommend the most commonly accepted interview answer first.
-- Mention trade-offs only when relevant.
-- If the question is incomplete, infer the most likely intent and answer it.
-- Never hallucinate project details. Use only the supplied project context.
-- Optimize every response for interview situations where time is limited.
-`
-
-const SYSTEM_PROMPTS: Record<string, string> = {
-  coding: `
-${BASE_SYSTEM_PROMPT}
-
-You are an expert coding interviewer.
-
-For every coding question:
-
-1. Identify the problem.
-2. Explain the intuition.
-3. Give the optimal algorithm.
-4. State Time Complexity.
-5. State Space Complexity.
-6. Mention important edge cases.
-7. Provide clean production-quality code.
-8. Explain the code briefly.
-9. Mention alternative approaches only if significantly different.
-
-Keep explanations interview-friendly.
-`,
-
-  system_design: `
-${BASE_SYSTEM_PROMPT}
-
-You are a Staff Software Engineer specializing in System Design interviews.
-
-Answer using this structure:
-
-1. Clarify requirements
-2. Functional requirements
-3. Non-functional requirements
-4. High-level architecture
-5. Components
-6. Database
-7. APIs
-8. Scaling
-9. Bottlenecks
-10. Trade-offs
-11. Security
-12. Monitoring
-13. Future improvements
-
-Use Mermaid diagrams when useful.
-`,
-
-  behavioral: `
-${BASE_SYSTEM_PROMPT}
-
-You are an interview coach.
-
-Answer using STAR:
-
-- Situation
-- Task
-- Action
-- Result
-
-Keep responses authentic and conversational.
-
-Avoid sounding scripted.
-
-Highlight measurable impact whenever possible.
-`,
-
-  project_specific: `
-${BASE_SYSTEM_PROMPT}
-
-You are answering questions about the candidate's own software projects.
-
-Rules:
-
-- Use ONLY the provided project documentation.
-- Never invent architecture.
-- If documentation is missing, clearly state that.
-- Explain design decisions.
-- Explain trade-offs.
-- Explain why technologies were selected.
-- Reference modules, workflows, APIs, and architecture when available.
-- Keep answers technically deep but concise.
-`,
-
-  general: `
-${BASE_SYSTEM_PROMPT}
-
-Answer technical interview questions clearly.
-
-Structure:
-
-- Short Answer
-- Explanation
-- Example
-- Best Practice
-- Common Mistake (if applicable)
-
-Prioritize clarity over completeness.
-`,
-}
+import { SYSTEM_PROMPTS } from './SystemPrompts'
 
 export class Orchestrator {
   private routerService: RouterService
@@ -223,14 +107,18 @@ export class Orchestrator {
 
       if (!routeResult.is_question) return
 
-      // Deterministic fast path: pinned project > routed project > keyword detect.
-      // Fire whenever the question targets a catalog project, regardless of the
-      // detected category (e.g. "explain the architecture of my X" routes as
-      // system_design but still needs the project block).
+      // Inject project context only when the question is actually project-related.
+      // A pinned project does NOT force project context onto generic questions —
+      // that causes hallucination (e.g. answering "what is Node.js" with project details).
       const routedCatalogProject =
         routeResult.project_id && this.projectCatalog.has(routeResult.project_id)
+      const questionMentionsProject = pinnedProjectId
+        ? RouterService.detectProject(transcript) === pinnedProjectId
+        : false
       const isProjectQuery =
-        routedCatalogProject || routeResult.category === 'project_specific' || Boolean(pinnedProjectId)
+        routedCatalogProject ||
+        routeResult.category === 'project_specific' ||
+        questionMentionsProject
       let contextTexts: string[] = []
 
       if (isProjectQuery) {

@@ -344,6 +344,7 @@ function App(): JSX.Element {
   const handleSelectProject = (id: string | null): void => {
     setActiveProjectId(id);
     window.api.send("session:set-project", id);
+    if (id !== null) setView("chat"); // switch back to chat after selecting
   };
 
   const handleToggleProjects = (): void => {
@@ -418,6 +419,13 @@ function App(): JSX.Element {
             <div className="flex-1 min-h-0 flex flex-col">
               <div className="relative flex-1 min-h-0">
                 <div className="absolute inset-0 overflow-y-auto space-y-3 px-1">
+                  {activeProject && (
+                    <div className="flex justify-center">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        Project: {activeProject.title}
+                      </span>
+                    </div>
+                  )}
                   {captureSource && (
                     <div className="flex justify-center">
                       <span

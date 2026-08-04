@@ -54,31 +54,44 @@ export class ContextService {
     const summary = this.summaryCache ?? (this.interviewId ? this.db.getSummary(this.interviewId) : null)
 
     const summaryBlock = summary
-      ? `<summary>\n${summary}\n</summary>\n`
+      ? `[CONVERSATION HISTORY SUMMARY - for context only, do NOT repeat or use as the answer]\n${summary}\n`
       : ''
-
-    const recentBlock = this.recentPairs
-      .map((p) => `Q: ${p.question}\nA: ${p.answer}`)
-      .join('\n')
 
     const contextBlock = retrievedContext.length > 0
-      ? `<context>\n${retrievedContext.join('\n---\n')}\n</context>\n`
+      ? `[PROJECT CONTEXT]\n${retrievedContext.join('\n---\n')}\n`
       : ''
 
-    const sections = [
-      { priority: 1, text: summaryBlock },
-      { priority: 2, text: recentBlock ? `<recent>\n${recentBlock}\n</recent>\n` : '' },
-      { priority: 3, text: contextBlock },
-      { priority: 4, text: `<question>\n${query}\n</question>` }
-    ].filter(s => s.text)
+    const questionBlock = `[CURRENT QUESTION - answer ONLY this]\n${query}`
 
-    let tokenCount = 0
-    const selected: string[] = []
-    for (const section of sections) {
-      const tokens = this.estimateTokens(section.text)
-      if (tokenCount + tokens > MAX_PROMPT_TOKENS && selected.length > 0) break
-      tokenCount += tokens
-      selected.push(section.text)
+    // Always guarantee essential blocks
+    const essential = [questionBlock, contextBlock].filter(Boolean)
+    let tokenCount = essential.reduce((sum, t) => sum + this.estimateTokens(t), 0)
+    const selected: string[] = [...essential]
+
+    // Fit recent pairs into remaining budget, trimming oldest first
+    if (this.recentPairs.length > 0) {
+      const pairs = [...this.recentPairs]
+      while (pairs.length > 0) {
+        const block =
+          `[RECENT CONVERSATION HISTORY - these are PAST exchanges, do NOT repeat them as the answer]\n` +
+          pairs.map((p) => `Past Q: ${p.question}\nPast A: ${p.answer}`).join('\n') + '\n'
+        const tokens = this.estimateTokens(block)
+        if (tokenCount + tokens <= MAX_PROMPT_TOKENS) {
+          selected.splice(1, 0, block)
+          tokenCount += tokens
+          break
+        }
+        pairs.shift()
+      }
+    }
+
+    // Add summary only if budget allows
+    if (summaryBlock) {
+      const tokens = this.estimateTokens(summaryBlock)
+      if (tokenCount + tokens <= MAX_PROMPT_TOKENS) {
+        selected.splice(1, 0, summaryBlock)
+        tokenCount += tokens
+      }
     }
 
     const prompt = selected.join('\n')

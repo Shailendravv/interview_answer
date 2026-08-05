@@ -7,19 +7,13 @@ import {
   ProjectListPayload,
   ProjectCardData
 } from './projectsTypes'
+import {
+  ProjectDetectionEntry,
+  buildDetectionPatterns,
+  scoreDetection
+} from './detection'
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function normalizeText(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-export interface ProjectKeywordEntry {
-  project: string
-  patterns: RegExp[]
-}
+export interface ProjectKeywordEntry extends ProjectDetectionEntry {}
 
 const REFRESH_DEBOUNCE_MS = 300
 
@@ -95,20 +89,12 @@ export class ProjectCatalogService {
     }
   }
 
-  private buildPatterns(project: ProjectConcept): RegExp[] {
-    const sources = [project.id, project.title, project.description, ...project.tags, ...project.keywords]
-    const patterns: RegExp[] = []
-    const seen = new Set<string>()
-    for (const source of sources) {
-      const words = normalizeText(source).split(' ').filter((w) => w.length > 0)
-      for (const word of words) {
-        const key = word.toLowerCase()
-        if (seen.has(key) || word.length < 2) continue
-        seen.add(key)
-        patterns.push(new RegExp(`\\b${escapeRegExp(key)}\\b`, 'i'))
-      }
-    }
-    return patterns
+  private buildPatterns(project: ProjectConcept): ProjectDetectionEntry['patterns'] {
+    return buildDetectionPatterns({
+      id: project.id,
+      title: project.title,
+      keywords: project.keywords
+    })
   }
 
   private buildPromptBlock(project: ProjectConcept): string {
@@ -170,12 +156,7 @@ export class ProjectCatalogService {
   }
 
   detectProject(text: string): string | null {
-    const normalized = normalizeText(text)
-    if (!normalized) return null
-    for (const entry of this.keywordEntries) {
-      if (entry.patterns.some((p) => p.test(normalized))) return entry.project
-    }
-    return null
+    return scoreDetection(text, this.keywordEntries).id
   }
 
   listProjectsForPrompt(): string {
@@ -189,7 +170,12 @@ export class ProjectCatalogService {
 
   buildClarifyBlock(): string {
     const titles = this.bundle.projects.map((p) => `- ${p.id} — ${p.title}`).join('\n')
-    return `AVAILABLE PROJECTS:\n${titles || '- none'}\n\nAsk the user which project they are referring to before answering.`
+    return (
+      `AVAILABLE PROJECTS:\n${titles || '- none'}\n\n` +
+      `If the question names one of these projects, answer using its context. ` +
+      `If it does not name a specific project, respond exactly: ` +
+      `"No project is currently selected. Please select a project from the Projects tab first."`
+    )
   }
 
   getBundleForRenderer(): ProjectListPayload {

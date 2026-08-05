@@ -1,4 +1,5 @@
 import { OllamaProvider } from './OllamaProvider'
+import { ProjectDetectionEntry, scoreDetection } from '../docs/detection'
 
 export interface RouterOutput {
   is_question: boolean
@@ -9,9 +10,9 @@ export interface RouterOutput {
 
 const QUESTION_KEYWORDS = /\b(what|how|why|explain|describe|tell|can|could|would|should|do|did|does|is|are|was|were|define|compare|contrast|list|write|implement|solve|find|show|demonstrate|walk me through)\b/i
 
-const PROJECT_KEYWORDS: { project: string; patterns: RegExp[] }[] = []
+const PROJECT_KEYWORDS: ProjectDetectionEntry[] = []
 
-export function configureProjectKeywords(entries: { project: string; patterns: RegExp[] }[]): void {
+export function configureProjectKeywords(entries: ProjectDetectionEntry[]): void {
   PROJECT_KEYWORDS.length = 0
   PROJECT_KEYWORDS.push(...entries)
 }
@@ -20,6 +21,10 @@ let routerProjectList = 'project_a through project_f'
 export function setRouterProjectList(list: string): void {
   routerProjectList = list
 }
+
+const OOP_PATTERN = /\b(oops?|object[ -]?orient(ed)?)\b/i
+const OOP_CONCEPTUAL = /\b(what is|what are|explain|define|concept|pillars|principles|basics|introduction)\b/i
+const OOP_IMPLEMENTATION = /\bimplement(s|ed|ing|ation)?\b|\b(write|design|build|create|code|develop|solve|construct)\b/i
 
 const CATEGORY_KEYWORDS: { category: RouterOutput['category']; patterns: RegExp[] }[] = [
   {
@@ -91,10 +96,16 @@ export class RouterService {
   }
 
   static detectProject(text: string): string | null {
-    for (const { project, patterns } of PROJECT_KEYWORDS) {
-      if (patterns.some((p) => p.test(text))) return project
-    }
-    return null
+    return scoreDetection(text, PROJECT_KEYWORDS).id
+  }
+
+  static detectProjectScored(text: string): {
+    id: string | null
+    hits: number
+    confident: boolean
+    ambiguous: boolean
+  } {
+    return scoreDetection(text, PROJECT_KEYWORDS)
   }
 
   static fastRoute(transcript: string): RouterOutput | null {
@@ -144,6 +155,17 @@ export class RouterService {
 
     const fastResult = RouterService.fastRoute(transcript)
     if (fastResult) return fastResult
+
+    // Bare conceptual queries without '?' or question keywords (e.g. "OOPS concept")
+    // are questions too — route them deterministically instead of trusting the LLM.
+    if (OOP_PATTERN.test(transcript)) {
+      return {
+        is_question: true,
+        category: RouterService.detectCategory(transcript),
+        project_id: RouterService.detectProject(transcript),
+        refined_query: RouterService.refine(transcript)
+      }
+    }
 
     try {
       const result = await this.llmRoute(transcript)
@@ -221,6 +243,13 @@ export class RouterService {
   }
 
   static detectCategory(text: string): RouterOutput['category'] {
+    // Conceptual OOP questions ("OOPS in python?", "what is OOPS concept?")
+    // belong in the general template — the coding template's
+    // Problem/Approach/Code shape is a poor fit. Implementation-style OOP
+    // ("implement an OOP inventory system") still falls through to coding.
+    if (OOP_PATTERN.test(text) && (OOP_CONCEPTUAL.test(text) || !OOP_IMPLEMENTATION.test(text))) {
+      return 'general'
+    }
     for (const { category, patterns } of CATEGORY_KEYWORDS) {
       if (patterns.some((p) => p.test(text))) return category
     }

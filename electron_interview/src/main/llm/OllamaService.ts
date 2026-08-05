@@ -144,6 +144,37 @@ export class OllamaService {
     return this.models.get(model) ?? false
   }
 
+  async chat(
+    model: string,
+    messages: { role: string; content: string }[],
+    stream = true,
+    signal?: AbortSignal
+  ): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(new DOMException('Ollama generation timed out after 15s', 'TimeoutError')), 15000)
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      controller.abort(signal?.reason)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    try {
+      const res = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages, stream, keep_alive: -1 }),
+        signal: controller.signal
+      })
+      if (res.ok) {
+        this.models.set(model, true)
+      }
+      return res
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+    }
+  }
+
   async generate(model: string, prompt: string, stream = true, signal?: AbortSignal): Promise<Response> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(new DOMException('Ollama generation timed out after 15s', 'TimeoutError')), 15000)

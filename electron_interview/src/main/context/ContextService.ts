@@ -7,10 +7,22 @@ const TOKENS_PER_CHAR_PROSE = 0.25
 const TOKENS_PER_CHAR_CODE = 0.5
 const RECENT_PAIRS = 3
 const SUMMARY_TOKEN_TARGET = 150
+const MAX_HISTORY_ANSWER_CHARS = 400
 
 interface QAPair {
   question: string
   answer: string
+}
+
+export interface PromptTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface BuiltPrompt {
+  systemExtra: string
+  turns: PromptTurn[]
+  tokenCount: number
 }
 
 export class ContextService {
@@ -50,52 +62,64 @@ export class ContextService {
   async buildPrompt(
     query: string,
     retrievedContext: string[]
-  ): Promise<{ prompt: string; tokenCount: number }> {
+  ): Promise<BuiltPrompt> {
     const summary = this.summaryCache ?? (this.interviewId ? this.db.getSummary(this.interviewId) : null)
 
     const summaryBlock = summary
-      ? `[CONVERSATION HISTORY SUMMARY - for context only, do NOT repeat or use as the answer]\n${summary}\n`
+      ? `[CONVERSATION HISTORY SUMMARY - for context only, do NOT repeat or use as the answer]\n${summary}`
       : ''
-
     const contextBlock = retrievedContext.length > 0
-      ? `[PROJECT CONTEXT]\n${retrievedContext.join('\n---\n')}\n`
+      ? `[PROJECT CONTEXT]\n${retrievedContext.join('\n---\n')}`
       : ''
+    const systemExtra = [summaryBlock, contextBlock].filter(Boolean).join('\n')
 
-    const questionBlock = `[CURRENT QUESTION - answer ONLY this]\n${query}`
+    // The current question is always the FINAL user turn — the model answers
+    // the last turn instead of "continuing" a flattened prompt string, which
+    // was the root cause of history/instruction markers leaking into output.
+    const questionTurn: PromptTurn = {
+      role: 'user',
+      content: `[CURRENT QUESTION - answer ONLY this]\n${query}`
+    }
 
-    // Always guarantee essential blocks
-    const essential = [questionBlock, contextBlock].filter(Boolean)
-    let tokenCount = essential.reduce((sum, t) => sum + this.estimateTokens(t), 0)
-    const selected: string[] = [...essential]
+    let turns: PromptTurn[] = [questionTurn]
+    let tokenCount = this.estimateTokens(questionTurn.content) + this.estimateTokens(systemExtra)
 
-    // Fit recent pairs into remaining budget, trimming oldest first
+    // Fit recent pairs into the remaining budget as real alternating turns,
+    // trimming oldest first. Truncate past answers so a long answer cannot
+    // dominate or be echoed back verbatim.
     if (this.recentPairs.length > 0) {
       const pairs = [...this.recentPairs]
       while (pairs.length > 0) {
-        const block =
-          `[RECENT CONVERSATION HISTORY - these are PAST exchanges, do NOT repeat them as the answer]\n` +
-          pairs.map((p) => `Past Q: ${p.question}\nPast A: ${p.answer}`).join('\n') + '\n'
-        const tokens = this.estimateTokens(block)
-        if (tokenCount + tokens <= MAX_PROMPT_TOKENS) {
-          selected.splice(1, 0, block)
-          tokenCount += tokens
+        const pairsTokens = pairs.reduce(
+          (sum, p) =>
+            sum +
+            this.estimateTokens(p.question) +
+            this.estimateTokens(this.truncateAnswer(p.answer)),
+          0
+        )
+        if (tokenCount + pairsTokens <= MAX_PROMPT_TOKENS) {
+          const historyTurns: PromptTurn[] = pairs.flatMap((p) => [
+            { role: 'user', content: p.question },
+            { role: 'assistant', content: this.truncateAnswer(p.answer) }
+          ])
+          turns = [...historyTurns, questionTurn]
+          tokenCount += pairsTokens
           break
         }
         pairs.shift()
       }
     }
 
-    // Add summary only if budget allows
-    if (summaryBlock) {
-      const tokens = this.estimateTokens(summaryBlock)
-      if (tokenCount + tokens <= MAX_PROMPT_TOKENS) {
-        selected.splice(1, 0, summaryBlock)
-        tokenCount += tokens
-      }
-    }
+    const fullTokenCount =
+      this.estimateTokens(systemExtra) +
+      turns.reduce((sum, t) => sum + this.estimateTokens(t.content), 0)
 
-    const prompt = selected.join('\n')
-    return { prompt, tokenCount: this.estimateTokens(prompt) }
+    return { systemExtra, turns, tokenCount: fullTokenCount }
+  }
+
+  private truncateAnswer(answer: string): string {
+    if (answer.length <= MAX_HISTORY_ANSWER_CHARS) return answer
+    return `${answer.slice(0, MAX_HISTORY_ANSWER_CHARS)}…`
   }
 
   private triggerSummarization(): void {

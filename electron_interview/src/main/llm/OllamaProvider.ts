@@ -12,9 +12,15 @@ export class OllamaProvider extends LlmProvider {
   }
 
   async *generate(req: GenerationRequest): AsyncGenerator<string, GenerationResponse, void> {
+    const multiTurn = req.messages.length > 1
+    const extractToken = (parsed: { response?: string; message?: { content?: string } }): string =>
+      multiTurn ? parsed.message?.content ?? '' : parsed.response ?? ''
+
     const prompt = req.messages.map((m) => `${m.role}: ${m.content}`).join('\n')
 
-    const response = await this.ollama.generate(this.modelName, prompt, true, req.signal)
+    const response = multiTurn
+      ? await this.ollama.chat(this.modelName, req.messages, true, req.signal)
+      : await this.ollama.generate(this.modelName, prompt, true, req.signal)
 
     if (!response.ok) {
       let errMsg = `Ollama returned ${response.status}`
@@ -47,7 +53,7 @@ export class OllamaProvider extends LlmProvider {
           if (!line.trim()) continue
           try {
             const parsed = JSON.parse(line)
-            const token = parsed.response || ''
+            const token = extractToken(parsed)
             if (token) {
               fullText += token
               yield token
@@ -59,7 +65,7 @@ export class OllamaProvider extends LlmProvider {
       if (remainder.trim()) {
         try {
           const parsed = JSON.parse(remainder)
-          const token = parsed.response || ''
+          const token = extractToken(parsed)
           if (token) fullText += token
         } catch { /* trailing garbage */ }
       }

@@ -2,13 +2,17 @@ import { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/ipcChannels'
 import { RouterService, RouterOutput, configureProjectKeywords, setRouterProjectList } from '../llm/RouterService'
 import { LlmOrchestrator } from '../llm/LlmOrchestrator'
-import { ContextService } from '../context/ContextService'
+import { ContextService, PromptTurn } from '../context/ContextService'
 import { DatabaseService } from '../db/DatabaseService'
 import { RetrievalService } from '../docs/RetrievalService'
 import { ProjectDocsService } from '../docs/ProjectDocsService'
 import { ProjectCatalogService } from '../docs/ProjectCatalogService'
 import { TokenBatcher } from '../llm/TokenBatcher'
 import { SYSTEM_PROMPTS } from './SystemPrompts'
+import { AnswerSanitizer } from '../context/AnswerSanitizer'
+import { isSimilarTranscript } from './transcriptSimilarity'
+
+const GENERIC_QUERY_PATTERN = /^(everything|explain|tell me more|tell me about it|more|all of it|all|go on|continue|elaborate)\.?$/i
 
 export class Orchestrator {
   private routerService: RouterService
@@ -69,7 +73,7 @@ export class Orchestrator {
     const normalized = transcript.trim().toLowerCase()
 
     if (this.isProcessing && this.lastProcessedTranscript &&
-        this.isSimilar(this.lastProcessedTranscript, normalized)) {
+        isSimilarTranscript(this.lastProcessedTranscript, normalized)) {
       return
     }
     if (!this.window) return
@@ -89,62 +93,102 @@ export class Orchestrator {
     try {
       this.sendStatus('processing')
 
-      // Speculative: detect project via regex (fast) before LLM route completes.
-      // When a project is pinned by the user OR is in the JSON catalog, skip
-      // vector retrieval entirely — the catalog block is injected directly.
       const pinnedProjectId = this.activeProjectId
-      const speculativeProjectId = pinnedProjectId ?? RouterService.detectProject(transcript)
-      const needsVectorRetrieval = Boolean(speculativeProjectId && !pinnedProjectId && !this.projectCatalog.has(speculativeProjectId))
-      const speculativeRetrieval = needsVectorRetrieval
+      const detection = RouterService.detectProjectScored(transcript)
+
+      // Resolve which project (if any) this turn is about, honoring the
+      // decision table: pinned unless explicitly/confidently overridden.
+      const resolved = this.resolveProject(pinnedProjectId, detection)
+
+      // Speculative vector retrieval only for projects not in the JSON catalog.
+      const speculativeProjectId =
+        resolved.projectId && !this.projectCatalog.has(resolved.projectId)
+          ? resolved.projectId
+          : null
+      const speculativeRetrieval = speculativeProjectId
         ? this.retrievalService.retrieve(transcript, speculativeProjectId).catch(() => [] as { text: string; score: number }[])
         : Promise.resolve([] as { text: string; score: number }[])
 
-      // Step 1 + speculative retrieval in parallel
-      const [routeResult, speculativeDocs] = await Promise.all([
+      const [routeResult0, speculativeDocs] = await Promise.all([
         this.routerService.route(transcript),
         speculativeRetrieval
       ])
 
-      if (!routeResult.is_question) return
+      if (!routeResult0.is_question) return
+      let routeResult = routeResult0
 
-      // Inject project context only when the question is actually project-related.
-      // A pinned project does NOT force project context onto generic questions —
-      // that causes hallucination (e.g. answering "what is Node.js" with project details).
-      const routedCatalogProject =
-        routeResult.project_id && this.projectCatalog.has(routeResult.project_id)
-      const questionMentionsProject = pinnedProjectId
-        ? RouterService.detectProject(transcript) === pinnedProjectId
-        : false
+      // Generic follow-ups ("everything", "explain") answer the active
+      // project instead of drifting to the last history topic.
+      if (
+        GENERIC_QUERY_PATTERN.test(routeResult.refined_query.trim()) ||
+        GENERIC_QUERY_PATTERN.test(transcript.trim())
+      ) {
+        const targetProject = resolved.projectId
+        if (targetProject) {
+          const project = this.projectCatalog.getById(targetProject)
+          routeResult = {
+            ...routeResult,
+            category: 'project_specific',
+            refined_query: `Explain the ${project?.title ?? 'selected project'} comprehensively.`
+          }
+        }
+      }
+
+      const routedNonCatalogProject =
+        routeResult.project_id && !this.projectCatalog.has(routeResult.project_id)
+      const explicitMention = detection.id !== null && !detection.ambiguous
       const isProjectQuery =
-        routedCatalogProject ||
+        explicitMention ||
         routeResult.category === 'project_specific' ||
-        questionMentionsProject
+        Boolean(routedNonCatalogProject)
+
       let contextTexts: string[] = []
 
       if (isProjectQuery) {
-        const projectId = pinnedProjectId ?? routeResult.project_id ?? speculativeProjectId
-        const block = projectId ? this.projectCatalog.getPromptBlock(projectId) : undefined
+        const projectId = resolved.projectId ?? routeResult.project_id
+        const block = projectId && this.projectCatalog.has(projectId)
+          ? this.projectCatalog.getPromptBlock(projectId)
+          : undefined
         if (block) {
           contextTexts = [block]
+        } else if (projectId && !this.projectCatalog.has(projectId)) {
+          const fallbackDocs = speculativeProjectId === projectId && speculativeDocs.length > 0
+            ? speculativeDocs
+            : await this.retrievalService.retrieve(routeResult.refined_query, projectId)
+          contextTexts = fallbackDocs.map((d) => d.text)
         } else if (routeResult.category === 'project_specific') {
           contextTexts = [this.projectCatalog.buildClarifyBlock()]
         }
       }
 
-      // Fallback: markdown/vector retrieval for projects not in the catalog
-      if (contextTexts.length === 0 && routeResult.project_id && !this.projectCatalog.has(routeResult.project_id)) {
-        const fallbackDocs = routeResult.project_id === speculativeProjectId && speculativeDocs.length > 0
-          ? speculativeDocs
-          : await this.retrievalService.retrieve(routeResult.refined_query, routeResult.project_id)
-        contextTexts = fallbackDocs.map((d) => d.text)
-      }
+      console.log('[route]', JSON.stringify({
+        transcript: transcript.slice(0, 140),
+        category: routeResult.category,
+        project_id: routeResult.project_id,
+        refined_query: routeResult.refined_query,
+        pinned: pinnedProjectId,
+        resolved: resolved.projectId,
+        detection: {
+          id: detection.id,
+          hits: detection.hits,
+          confident: detection.confident,
+          ambiguous: detection.ambiguous
+        }
+      }))
 
-      const { prompt } = await this.contextService.buildPrompt(
+      const { systemExtra, turns } = await this.contextService.buildPrompt(
         routeResult.refined_query,
         contextTexts
       )
 
-      await this.generateAndStream(routeResult, prompt, transcript, abort.signal, genId)
+      await this.generateAndStream(
+        routeResult,
+        systemExtra,
+        turns,
+        transcript,
+        abort.signal,
+        genId
+      )
 
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -160,6 +204,38 @@ export class Orchestrator {
     }
   }
 
+  private resolveProject(
+    pinnedProjectId: string | null,
+    detection: { id: string | null; confident: boolean; ambiguous: boolean }
+  ): { projectId: string | null; switched: boolean } {
+    if (detection.ambiguous) {
+      // Tied multi-match — keep pinned (if any); otherwise fall through to clarify.
+      return { projectId: pinnedProjectId, switched: false }
+    }
+    if (detection.id === null) {
+      return { projectId: pinnedProjectId, switched: false }
+    }
+    if (pinnedProjectId === detection.id) {
+      return { projectId: pinnedProjectId, switched: false }
+    }
+    if (pinnedProjectId !== null && detection.confident) {
+      this.activeProjectId = detection.id
+      console.log('[project] switched', JSON.stringify({ from: pinnedProjectId, to: detection.id }))
+      return { projectId: detection.id, switched: true }
+    }
+    if (pinnedProjectId !== null && !detection.confident) {
+      console.log('[project] weak mention ignored', JSON.stringify({ mentioned: detection.id, pinned: pinnedProjectId }))
+      return { projectId: pinnedProjectId, switched: false }
+    }
+    if (detection.confident) {
+      this.activeProjectId = detection.id
+      console.log('[project] first pin', JSON.stringify({ to: detection.id }))
+      return { projectId: detection.id, switched: true }
+    }
+    // No pinned project + weak single-token mention → one-turn override, non-sticky.
+    return { projectId: detection.id, switched: false }
+  }
+
   private pushToken(token: string, genId: number): void {
     this.tokenBatcher.push(token, genId)
   }
@@ -170,7 +246,8 @@ export class Orchestrator {
 
   private async generateAndStream(
     route: RouterOutput,
-    prompt: string,
+    systemExtra: string,
+    turns: PromptTurn[],
     transcript: string,
     signal?: AbortSignal,
     genId = 0
@@ -183,32 +260,45 @@ export class Orchestrator {
     const introBlock = intro?.summary
       ? `<about>\n${intro.summary}\n</about>\n`
       : ''
-    const systemPrompt = introBlock + (SYSTEM_PROMPTS[route.category] || SYSTEM_PROMPTS.general)
+    const systemPrompt =
+      introBlock +
+      (systemExtra ? systemExtra + '\n' : '') +
+      (SYSTEM_PROMPTS[route.category] || SYSTEM_PROMPTS.general)
+
+    const messages: { role: string; content: string }[] = [
+      { role: 'system', content: systemPrompt },
+      ...turns
+    ]
 
     this.window.webContents.send(IPC.ANSWER_RESET)
     this.window.webContents.send(IPC.TRANSCRIPT_FINAL, transcript)
 
     const gen = this.llmOrchestrator.getGenerationChain().generate({
       model: route.category,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt }
-      ],
+      messages,
       stream: true,
       maxTokens: 512,
       temperature: 0.7,
       signal
     })
 
+    // Defense-in-depth: strip prompt markers / history / question echoes the
+    // model might reproduce (primary defense is the multi-turn prompt shape).
+    const sanitizer = new AnswerSanitizer({ refinedQuery: route.refined_query })
+
     let fullAnswer = ''
+    const emitLine = (line: string): void => {
+      fullAnswer += line
+      this.pushToken(line, genId)
+    }
 
     for await (const token of gen) {
       if (signal?.aborted || !this.tokenBatcher.isActive(genId)) {
         return fullAnswer
       }
-      fullAnswer += token
-      this.pushToken(token, genId)
+      for (const line of sanitizer.push(token)) emitLine(line)
     }
+    for (const line of sanitizer.flush()) emitLine(line)
 
     // A cancelled generation ends "cleanly" from the provider's perspective;
     // only an actually-live generation may finalize.
@@ -224,25 +314,13 @@ export class Orchestrator {
       fullAnswer
     )
 
+    console.log('[answer]', JSON.stringify({
+      category: route.category,
+      project_id: route.project_id,
+      length: fullAnswer.length
+    }))
+
     return fullAnswer
-  }
-
-  private normalizeTranscript(text: string): string {
-    return text.trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/[.!?]+(\s|$)/g, '$1')
-  }
-
-  private isSimilar(a: string, b: string): boolean {
-    const na = this.normalizeTranscript(a)
-    const nb = this.normalizeTranscript(b)
-    if (na === nb) return true
-
-    const aWords = na.split(/\s+/).filter(Boolean)
-    const bWords = nb.split(/\s+/).filter(Boolean)
-    if (aWords.length === 0 || bWords.length === 0) return na === nb
-
-    const intersection = aWords.filter((w) => bWords.includes(w)).length
-    const union = new Set([...aWords, ...bWords]).size
-    return intersection / union >= 0.6
   }
 
   private sendStatus(status: string): void {

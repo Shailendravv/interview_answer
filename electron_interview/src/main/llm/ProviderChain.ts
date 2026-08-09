@@ -1,5 +1,6 @@
 import { LlmProvider, GenerationRequest, GenerationResponse } from './LlmProvider'
 import { CircuitBreaker, CircuitState } from './CircuitBreaker'
+import { describeError } from './errors'
 
 export interface ProviderEntry {
   provider: LlmProvider
@@ -93,7 +94,7 @@ export class ProviderChain extends LlmProvider {
         throw err
       }
       entry.circuitBreaker.recordFailure()
-      this.emit('warning', `${entry.provider.name} failed: ${err instanceof Error ? err.message : String(err)}`)
+      this.emit('warning', `${entry.provider.name} failed: ${describeError(err)}`)
       throw err instanceof Error ? err : new Error(String(err))
     }
   }
@@ -160,8 +161,7 @@ export class ProviderChain extends LlmProvider {
         throw err
       }
       winner.entry.circuitBreaker.recordFailure()
-      const errMsg = err instanceof Error ? err.message : String(err)
-      this.emit('warning', `${winner.entry.provider.name} failed: ${errMsg}`)
+      this.emit('warning', `${winner.entry.provider.name} failed: ${describeError(err)}`)
       throw err instanceof Error ? err : new Error(String(err))
     }
   }

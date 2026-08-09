@@ -11,6 +11,7 @@ import { TokenBatcher } from '../llm/TokenBatcher'
 import { SYSTEM_PROMPTS } from './SystemPrompts'
 import { AnswerSanitizer } from '../context/AnswerSanitizer'
 import { isSimilarTranscript } from './transcriptSimilarity'
+import { describeError } from '../llm/errors'
 
 const GENERIC_QUERY_PATTERN = /^(everything|explain|tell me more|tell me about it|more|all of it|all|go on|continue|elaborate)\.?$/i
 
@@ -198,7 +199,7 @@ export class Orchestrator {
       if (err instanceof Error && err.name === 'AbortError') {
         return
       }
-      this.window?.webContents.send(IPC.ANSWER_ERROR, String(err))
+      this.window?.webContents.send(IPC.ANSWER_ERROR, describeError(err))
     } finally {
       if (this.tokenBatcher.isActive(genId)) {
         this.isProcessing = false

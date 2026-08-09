@@ -21,7 +21,28 @@ import { TrayService } from "./tray/TrayService";
 import { ProjectCatalogService } from "./docs/ProjectCatalogService";
 import { IPC } from "../shared/ipcChannels";
 
-dotenvConfig({ path: resolve(__dirname, "../../.env") });
+function loadDotEnv(): void {
+  // `resolve(__dirname, "../../.env")` only exists in dev (project root). In the
+  // packaged app __dirname lives inside app.asar, so also probe the per-user
+  // config dir and the unpacked resources dir next to the executable.
+  const candidates = [
+    resolve(__dirname, "../../.env"),
+    resolve(app.getPath("userData"), ".env"),
+    resolve(process.resourcesPath, ".env"),
+  ];
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      dotenvConfig({ path });
+      console.log("[env] Loaded config from", path);
+      return;
+    }
+  }
+  console.warn(
+    "[env] No .env found — cloud providers (Groq/Cerebras/...) will be unavailable",
+  );
+}
+
+loadDotEnv();
 
 interface WhisperPaths {
   modelPath: string;
@@ -201,6 +222,7 @@ ipcMain.handle("desktop:sources", async () => {
 ipcMain.handle("app:config", () => ({
   micFallbackEnabled: MIC_FALLBACK_ENABLED,
   groqModel: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+  groqAvailable: Boolean(process.env.GROQ_API_KEY),
 }));
 
 // Project catalog (invoke)

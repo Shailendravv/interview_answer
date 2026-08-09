@@ -42,6 +42,7 @@ function App(): JSX.Element {
       (localStorage.getItem("generationModel") as "ollama" | "groq") ||
       "ollama",
   );
+  const [groqAvailable, setGroqAvailable] = useState(true);
   const [listeningPaused, setListeningPaused] = useState(false);
   const [audioSilentWarning, setAudioSilentWarning] = useState(false);
   const [captureSource, setCaptureSource] = useState<"system" | "mic" | null>(
@@ -89,9 +90,16 @@ function App(): JSX.Element {
     window.api
       .invoke("app:config")
       .then((cfg) => {
-        micFallbackRef.current = Boolean(
-          (cfg as { micFallbackEnabled?: boolean })?.micFallbackEnabled,
-        );
+        const config = cfg as {
+          micFallbackEnabled?: boolean;
+          groqAvailable?: boolean;
+        };
+        micFallbackRef.current = Boolean(config.micFallbackEnabled);
+        const available = Boolean(config.groqAvailable);
+        setGroqAvailable(available);
+        if (!available && generationModel === "groq") {
+          setGenerationModel("ollama");
+        }
       })
       .catch(() => {});
     window.api
@@ -632,13 +640,21 @@ function App(): JSX.Element {
                   </button>
                   <button
                     onClick={() => setGenerationModel("groq")}
+                    disabled={!groqAvailable}
+                    title={
+                      groqAvailable
+                        ? "Use Groq (cloud) for answers"
+                        : "Groq key not configured — add GROQ_API_KEY to your .env"
+                    }
                     className={`px-2 py-0.5 rounded text-xs border transition-colors ${
-                      generationModel === "groq"
-                        ? "bg-emerald-600/30 text-emerald-300 border-emerald-500/50"
-                        : "bg-white/10 text-gray-300 border-white/20 hover:bg-white/20"
+                      !groqAvailable
+                        ? "bg-white/5 text-gray-600 border-white/10 cursor-not-allowed"
+                        : generationModel === "groq"
+                          ? "bg-emerald-600/30 text-emerald-300 border-emerald-500/50"
+                          : "bg-white/10 text-gray-300 border-white/20 hover:bg-white/20"
                     }`}
                   >
-                    groq/qwen
+                    {groqAvailable ? "groq/qwen" : "groq (no key)"}
                   </button>
                   {sttError && (
                     <span className="text-red-400 font-medium">{sttError}</span>

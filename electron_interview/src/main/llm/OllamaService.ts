@@ -8,7 +8,7 @@ export interface OllamaModel {
 
 export class OllamaService {
   private process: ChildProcess | null = null
-  private baseUrl = 'http://localhost:11434'
+  private baseUrl = 'http://127.0.0.1:11434'
   private ready = false
   private models: Map<string, boolean> = new Map()
 
@@ -46,31 +46,51 @@ export class OllamaService {
         env: { ...process.env }
       })
 
-      this.process.stdout?.on('data', (data: Buffer) => {
-        const text = data.toString()
-        if (text.includes('Listening') || text.includes('listening')) {
-          this.ready = true
-          resolve()
-        }
-      })
+      let settled = false
+      const succeed = (): void => {
+        if (settled) return
+        settled = true
+        this.ready = true
+        resolve()
+      }
+      const fail = (message: string): void => {
+        if (settled) return
+        settled = true
+        this.ready = false
+        reject(new Error(message))
+      }
 
       this.process.on('error', (err) => {
-        reject(new Error(`Failed to start Ollama: ${err.message}`))
+        fail(`Failed to start Ollama: ${err.message}`)
       })
 
       this.process.on('exit', (code) => {
         this.ready = false
         if (code !== 0) {
-          reject(new Error(`Ollama exited with code ${code}`))
+          fail(`Ollama exited with code ${code}`)
         }
       })
 
-      setTimeout(() => {
-        if (!this.ready) {
-          this.ready = true
-          resolve()
+      // Poll the server until it actually accepts requests. A blind timer would
+      // let the app think Ollama is "ready" while it is still starting (or never
+      // started), turning every first question into a connection error.
+      const startedAt = Date.now()
+      const poll = async (): Promise<void> => {
+        try {
+          const res = await fetch(`${this.baseUrl}/api/tags`, { signal: AbortSignal.timeout(1500) })
+          if (res.ok) {
+            succeed()
+            return
+          }
+        } catch { /* not up yet */ }
+        if (settled) return
+        if (Date.now() - startedAt > 10000) {
+          fail(`Ollama did not become reachable at ${this.baseUrl} within 10s after starting`)
+          return
         }
-      }, 5000)
+        setTimeout(() => { void poll() }, 500)
+      }
+      void poll()
     })
   }
 

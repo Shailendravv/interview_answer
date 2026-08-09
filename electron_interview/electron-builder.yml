@@ -10,6 +10,8 @@ asarUnpack:
   - "**/node_modules/better-sqlite3/**"
 npmRebuild: true
 extraResources:
+  - from: .env
+    to: .env
   - from: projects.json
     to: projects.json
   - from: ../whisper.cpp/models/ggml-small.en.bin

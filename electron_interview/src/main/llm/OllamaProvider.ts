@@ -18,9 +18,14 @@ export class OllamaProvider extends LlmProvider {
 
     const prompt = req.messages.map((m) => `${m.role}: ${m.content}`).join('\n')
 
-    const response = multiTurn
-      ? await this.ollama.chat(this.modelName, req.messages, true, req.signal)
-      : await this.ollama.generate(this.modelName, prompt, true, req.signal)
+    let response: Response
+    try {
+      response = multiTurn
+        ? await this.ollama.chat(this.modelName, req.messages, true, req.signal)
+        : await this.ollama.generate(this.modelName, prompt, true, req.signal)
+    } catch (err) {
+      throw this.friendlyUnreachableError(err)
+    }
 
     if (!response.ok) {
       let errMsg = `Ollama returned ${response.status}`
@@ -78,5 +83,23 @@ export class OllamaProvider extends LlmProvider {
 
   async healthCheck(): Promise<boolean> {
     return this.ollama.isReady() && this.ollama.isModelLoaded(this.modelName)
+  }
+
+  // undici reports an unreachable server as `TypeError: fetch failed` with the
+  // real reason (ECONNREFUSED/ENOTFOUND/...) on `err.cause.code`. Translate that
+  // into a message the user can act on instead of the bare "fetch failed".
+  private friendlyUnreachableError(err: unknown): Error {
+    if (err instanceof Error) {
+      const outerCode = (err as Error & { code?: unknown }).code
+      const causeCode = (err as Error & { cause?: { code?: unknown } }).cause?.code
+      const code = typeof outerCode === 'string' ? outerCode : causeCode
+      if (typeof code === 'string' && /^(ECONNREFUSED|EHOSTUNREACH|ENOTFOUND|EAI_AGAIN|ECONNRESET|UND_ERR_)/.test(code)) {
+        return new Error(
+          `Cannot reach Ollama at ${this.ollama.getBaseUrl()} (${code}). ` +
+          'Make sure Ollama is installed and running (`ollama serve`).'
+        )
+      }
+    }
+    return err instanceof Error ? err : new Error(String(err))
   }
 }

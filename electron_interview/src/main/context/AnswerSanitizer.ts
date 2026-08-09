@@ -22,6 +22,7 @@ const MARKDOWN_HEADING = /^\s*#{1,6}\s/
 export class AnswerSanitizer {
   private buffer = ''
   private historyRegion = false
+  private inThink = false
   private readonly refinedQuery: string
 
   constructor(options: AnswerSanitizerOptions) {
@@ -48,7 +49,43 @@ export class AnswerSanitizer {
     return this.processLine(remaining)
   }
 
+  // Reasoning models emit a <think>…</think> block before the answer. It spans
+  // arbitrary token boundaries, so track open/close state across calls and drop
+  // everything inside (mirrors the local historyRegion handling).
+  private stripThink(line: string): string {
+    let out = line
+    let cleaned = out.replace(/<think>[\s\S]*?<\/think>/gi, '')
+    while (cleaned !== out) {
+      out = cleaned
+      cleaned = out.replace(/<think>[\s\S]*?<\/think>/gi, '')
+    }
+
+    if (!this.inThink) {
+      const openIdx = out.search(/<think>/i)
+      if (openIdx !== -1) {
+        this.inThink = true
+        out = out.slice(0, openIdx)
+      }
+    }
+
+    if (this.inThink) {
+      const closeIdx = out.search(/<\/think>/i)
+      if (closeIdx !== -1) {
+        this.inThink = false
+        out = out.slice(closeIdx + '</think>'.length)
+      } else {
+        out = ''
+      }
+    }
+
+    return out
+  }
+
   private processLine(line: string): string[] {
+    const stripped = this.stripThink(line)
+    if (!stripped) return []
+    line = stripped
+
     if (this.historyRegion) {
       if (PAST_LINE.test(line)) return []
       if (!line.trim()) return []

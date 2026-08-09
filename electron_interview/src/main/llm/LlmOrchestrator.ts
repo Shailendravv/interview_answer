@@ -11,6 +11,7 @@ import { OpenRouterProvider } from './cloud/OpenRouterProvider'
 
 interface ProviderKeys {
   groq?: string
+  groqModel?: string
   cerebras?: string
   sambanova?: string
   gemini?: string
@@ -23,12 +24,12 @@ export class LlmOrchestrator {
   private chain: ProviderChain
   private router: OllamaProvider
   private cloudProviders: LlmProvider[] = []
+  private groqProvider: GroqProvider | null = null
+  private generationModel: 'ollama' | 'groq' = 'ollama'
 
   constructor(keys: ProviderKeys) {
     this.ollamaService = new OllamaService()
     this.router = new OllamaProvider(this.ollamaService)
-
-    this.chain = new ProviderChain()
 
     const providerConfigs: { key: string | undefined; Provider: new (k: string) => LlmProvider }[] = [
       { key: keys.groq, Provider: GroqProvider },
@@ -43,16 +44,45 @@ export class LlmOrchestrator {
       if (key) {
         const provider = new Provider(key)
         this.cloudProviders.push(provider)
-        this.chain.addProvider(provider, 3, 5000)
       }
     }
 
-    // Local Ollama is the final backstop — high failure tolerance, longer timeout
-    this.chain.addProvider(
-      new OllamaProvider(this.ollamaService, 'qwen2.5-coder:1.5b'),
-      10,
-      15000
-    )
+    if (keys.groq) {
+      this.groqProvider = new GroqProvider(keys.groq, keys.groqModel)
+    }
+
+    this.chain = this.buildGenerationChain(this.generationModel)
+  }
+
+  private buildGenerationChain(model: 'ollama' | 'groq'): ProviderChain {
+    const chain = new ProviderChain()
+    if (model === 'groq' && this.groqProvider) {
+      chain.addProvider(this.groqProvider, 3, 5000)
+    } else {
+      // Local Ollama is the default generator — high failure tolerance, longer timeout
+      chain.addProvider(
+        new OllamaProvider(this.ollamaService, 'qwen2.5-coder:1.5b'),
+        10,
+        15000
+      )
+    }
+    return chain
+  }
+
+  setGenerationModel(model: 'ollama' | 'groq'): void {
+    if (model === 'groq' && !this.groqProvider) {
+      console.warn('[llm] GROQ_API_KEY not set; staying on local Ollama')
+      return
+    }
+    if (model !== this.generationModel) {
+      this.generationModel = model
+      this.chain = this.buildGenerationChain(model)
+      console.log(`[llm] generation model -> ${model}`)
+    }
+  }
+
+  getGenerationModel(): 'ollama' | 'groq' {
+    return this.generationModel
   }
 
   async initialize(): Promise<void> {

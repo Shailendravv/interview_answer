@@ -3,6 +3,7 @@ export const IPC = {
   AUDIO_START: 'audio:start',
   AUDIO_STOP: 'audio:stop',
   AUDIO_CHUNK: 'audio:chunk',
+  AUDIO_MUTE: 'audio:mute',
 
   // Transcript (main → renderer)
   TRANSCRIPT_INTERIM: 'transcript:interim',
@@ -20,6 +21,8 @@ export const IPC = {
   // Session history (renderer → main)
   SESSION_START: 'session:start',
   HISTORY_APPEND: 'history:append',
+  SESSION_SET_PROJECT: 'session:set-project',
+  SESSION_SET_MODEL: 'session:set-model',
 
   // Session history (renderer invoke → main)
   HISTORY_LOAD: 'history:load',
@@ -45,7 +48,6 @@ export const IPC = {
   PROJECTS_LIST: 'projects:list',
   PROJECTS_OPEN: 'projects:open',
   PROJECTS_UPDATED: 'projects:updated',
-  SESSION_SET_PROJECT: 'session:set-project',
 
   // Status
   STATUS_UPDATE: 'status:update',

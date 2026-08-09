@@ -20,6 +20,7 @@ export class AudioService {
   private onFinalTranscript: TranscriptCallback | null = null
   private sttInit: Promise<void> | null = null
   private lastRestartAt = 0
+  private muted = false
 
   constructor(private sttConfig: SttServiceConfig, private debug = false) {
     this.stt = createSttService(this.sttConfig)
@@ -61,6 +62,10 @@ export class AudioService {
     ipcMain.on(IPC.AUDIO_STOP, () => {
       this.stopCapture()
     })
+
+    ipcMain.on(IPC.AUDIO_MUTE, (_event, muted: boolean) => {
+      this.muted = Boolean(muted)
+    })
   }
 
   private async startCapture(): Promise<void> {
@@ -94,6 +99,8 @@ export class AudioService {
     if (!this.stt) return
 
     this.stt.on('transcript', (text, isFinal) => {
+      if (this.muted) return
+
       if (this.debug) {
         console.log(`[stt] transcript final=${isFinal} text="${text}"`)
       }

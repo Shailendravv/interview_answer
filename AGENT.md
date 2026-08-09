@@ -19,7 +19,8 @@ You are an expert Principal Software Engineer. Your goal is to implement feature
 - **Comments:** Write comments only to explain *why* complex logic was implemented, not *what* it does. The code should be self-documenting.
 
 ## 4. Workflow & Task Management
-- **Task Tracking:** You MUST maintain and update the `Todo List.md` file after completing every task.
+<!-- - **Task Tracking:** You MUST maintain and update the `Todo List.md` file after completing every task. -->
+- **Task Tracking:** You MUST maintain and update the `electron_interview\documents\Todo List.md` file after completing every task.
 - **Incremental Progress:** Work on one task at a time. Do not bundle multiple unassociated tasks into a single massive commit/edit.
 - **Verification:** Before marking a task as complete in the Todo List, ensure the code compiles, lints pass, and no obvious syntax errors exist.
 

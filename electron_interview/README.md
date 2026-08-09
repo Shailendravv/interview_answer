@@ -53,7 +53,8 @@ cp .env.example .env
 | `WHISPER_SERVER_BINARY_PATH` | No | `whisper.cpp/build/bin/Release/whisper-server.exe` | Path to whisper-server.exe (persistent HTTP engine, lower latency) |
 | `WHISPER_SERVER_HOST` | No | `127.0.0.1` | whisper-server host |
 | `WHISPER_SERVER_PORT` | No | `8080` | whisper-server port |
-| `GROQ_API_KEY` | No | — | Groq API key (free tier: `llama-3.1-8b-instant`) |
+| `GROQ_API_KEY` | No | — | Groq API key (free tier) |
+| `GROQ_MODEL` | No | `llama-3.1-8b-instant` | Groq model ID — **the single place to change** (e.g. `qwen/qwen3.6-27b` for Qwen 3.6 27B) if Groq deprecates the model; no code edits needed |
 | `CEREBRAS_API_KEY` | No | — | Cerebras API key |
 | `SAMBANOVA_API_KEY` | No | — | SambaNova API key |
 | `GEMINI_API_KEY` | No | — | Google Gemini API key |
@@ -64,7 +65,9 @@ At minimum, no API keys are required — the app runs with:
 - **whisper.cpp** for STT (or browser mic capture via getUserMedia)
 - **Ollama** with `qwen2.5-coder:1.5b` for both routing and generation fallback
 
-For better quality generation, add at least one cloud provider API key. The chain tries providers in order: **Groq → Cerebras → SambaNova → Gemini → NVIDIA → OpenRouter → local Ollama**.
+For better quality generation, add at least one cloud provider API key. **Answer generation defaults to local Ollama** (`qwen2.5-coder:1.5b`). Use the model dropdown in the UI (bottom status bar) to switch answers to **Groq** (default model: `llama-3.1-8b-instant`) when you want a bigger model for coding questions. Routing, summarization, and project-doc retrieval always stay on local Ollama.
+
+> **Groq Qwen 3.6 27B**: free on the Groq free plan (no credit card), rate-limited to 30 RPM / 1K req/day / 200K tokens/day. It is a **preview** model — if Groq deprecates it, just update `GROQ_MODEL` in `.env` and restart.
 
 ---
 

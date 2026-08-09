@@ -56,6 +56,10 @@ export class Orchestrator {
     this.activeProjectId = projectId
   }
 
+  setGenerationModel(model: 'ollama' | 'groq'): void {
+    this.llmOrchestrator.setGenerationModel(model)
+  }
+
   getActiveProject(): string | null {
     return this.activeProjectId
   }

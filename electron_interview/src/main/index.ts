@@ -137,6 +137,7 @@ const sttConfig = {
 
 const llmKeys = {
   groq: process.env.GROQ_API_KEY,
+  groqModel: process.env.GROQ_MODEL,
   cerebras: process.env.CEREBRAS_API_KEY,
   sambanova: process.env.SAMBANOVA_API_KEY,
   gemini: process.env.GEMINI_API_KEY,
@@ -173,6 +174,15 @@ ipcMain.on("session:start", () => {
   historyService.startSession();
   console.log("[index] Session started");
 });
+let pendingGenerationModel: "ollama" | "groq" | null = null;
+ipcMain.on("session:set-model", (_event, model: string) => {
+  if (model !== "ollama" && model !== "groq") return;
+  if (orchestrator) {
+    orchestrator.setGenerationModel(model);
+  } else {
+    pendingGenerationModel = model;
+  }
+});
 ipcMain.on("history:append", (_event, qa: unknown) => {
   historyService.append(
     qa as { id: string; question: string; answer: string; timestamp: number },
@@ -190,6 +200,7 @@ ipcMain.handle("desktop:sources", async () => {
 });
 ipcMain.handle("app:config", () => ({
   micFallbackEnabled: MIC_FALLBACK_ENABLED,
+  groqModel: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
 }));
 
 // Project catalog (invoke)
@@ -335,6 +346,10 @@ async function createWindow(): Promise<void> {
   // Initialize orchestrator
   orchestrator = new Orchestrator(llmOrchestrator, projectCatalog);
   orchestrator.setWindow(win);
+  if (pendingGenerationModel) {
+    orchestrator.setGenerationModel(pendingGenerationModel);
+    pendingGenerationModel = null;
+  }
   await orchestrator.startInterview("Interview Session");
 
   // Forward projects.json hot-reload to the renderer

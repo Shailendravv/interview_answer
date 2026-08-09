@@ -37,6 +37,12 @@ function App(): JSX.Element {
   const [sttEngine, setSttEngine] = useState("");
   const [sttError, setSttError] = useState<string | null>(null);
   const [codingInput, setCodingInput] = useState("");
+  const [generationModel, setGenerationModel] = useState<"ollama" | "groq">(
+    () =>
+      (localStorage.getItem("generationModel") as "ollama" | "groq") ||
+      "ollama",
+  );
+  const [listeningPaused, setListeningPaused] = useState(false);
   const [audioSilentWarning, setAudioSilentWarning] = useState(false);
   const [captureSource, setCaptureSource] = useState<"system" | "mic" | null>(
     null,
@@ -115,6 +121,12 @@ function App(): JSX.Element {
     window.api.on("projects:updated", handler);
     return () => window.api.removeAllListeners("projects:updated");
   }, []);
+
+  // Sync the selected generation model to the main process + persist it
+  useEffect(() => {
+    localStorage.setItem("generationModel", generationModel);
+    window.api.send("session:set-model", generationModel);
+  }, [generationModel]);
 
   // Global keyboard shortcuts for window snapping / layout
   useEffect(() => {
@@ -295,6 +307,8 @@ function App(): JSX.Element {
     setTranscript("");
     setLiveTranscript("");
     clearSession();
+    setListeningPaused(false);
+    window.api.send("audio:mute", false);
     window.api.send("session:start");
     setAudioSilentWarning(false);
     setCaptureSource(null);
@@ -497,6 +511,23 @@ function App(): JSX.Element {
                   >
                     Stop
                   </button>
+                  <button
+                    onClick={() =>
+                      setListeningPaused((paused) => {
+                        const next = !paused;
+                        window.api.send("audio:mute", next);
+                        return next;
+                      })
+                    }
+                    disabled={!isListening}
+                    className={`px-4 py-1.5 backdrop-blur-md rounded-lg transition-colors font-medium text-sm ${
+                      listeningPaused
+                        ? "bg-amber-600/40 hover:bg-amber-500/60 text-amber-200"
+                        : "bg-blue-600/30 hover:bg-blue-500/50"
+                    } disabled:bg-white/5 disabled:text-gray-500`}
+                  >
+                    {listeningPaused ? "Resume" : "Pause"}
+                  </button>
                   {status === "error" && (
                     <button
                       onClick={reset}
@@ -589,6 +620,26 @@ function App(): JSX.Element {
                   >
                     STT: {sttEngine || "..."}
                   </span>
+                  <button
+                    onClick={() => setGenerationModel("ollama")}
+                    className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+                      generationModel === "ollama"
+                        ? "bg-emerald-600/30 text-emerald-300 border-emerald-500/50"
+                        : "bg-white/10 text-gray-300 border-white/20 hover:bg-white/20"
+                    }`}
+                  >
+                    ollama/qwen
+                  </button>
+                  <button
+                    onClick={() => setGenerationModel("groq")}
+                    className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+                      generationModel === "groq"
+                        ? "bg-emerald-600/30 text-emerald-300 border-emerald-500/50"
+                        : "bg-white/10 text-gray-300 border-white/20 hover:bg-white/20"
+                    }`}
+                  >
+                    groq/qwen
+                  </button>
                   {sttError && (
                     <span className="text-red-400 font-medium">{sttError}</span>
                   )}

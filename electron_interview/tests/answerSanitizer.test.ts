@@ -71,4 +71,30 @@ describe('AnswerSanitizer', () => {
     // buffer fully drained
     expect(sanitizer.flush()).toEqual([])
   })
+
+  it('strips a <think> block on a single line', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: '' })
+    const input = '<think>I should reason here.</think>\nNode.js is a runtime.'
+    expect(feed(sanitizer, input)).toBe('Node.js is a runtime.')
+  })
+
+  it('strips a <think> block split across many lines', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: '' })
+    const input = [
+      '<think> Here is a thinking process:',
+      'Step one: analyze.',
+      'Step two: draft.',
+      '</think>',
+      '## Answer',
+      'Node.js is a runtime.'
+    ].join('\n')
+    expect(feed(sanitizer, input)).toBe('## Answer\nNode.js is a runtime.')
+  })
+
+  it('keeps text after a <think> region closes across tokens', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: '' })
+    sanitizer.push('<think>reasoning ')
+    sanitizer.push('still going</think>\n')
+    expect(sanitizer.push('The answer.\n')).toEqual(['The answer.\n'])
+  })
 })

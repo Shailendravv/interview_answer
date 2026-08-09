@@ -5,6 +5,7 @@ export interface CloudProviderConfig {
   apiKey: string
   baseUrl: string
   model: string
+  extraBody?: Record<string, unknown>
 }
 
 export abstract class BaseCloudProvider extends LlmProvider {
@@ -22,7 +23,8 @@ export abstract class BaseCloudProvider extends LlmProvider {
       messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
       stream: req.stream ?? true,
       max_tokens: req.maxTokens ?? 1024,
-      temperature: req.temperature ?? 0.7
+      temperature: req.temperature ?? 0.7,
+      ...this.config.extraBody
     }
 
     const response = await fetch(url, {

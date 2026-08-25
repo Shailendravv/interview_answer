@@ -285,6 +285,19 @@ export class RouterService {
     return detection.id !== null && !detection.ambiguous && detection.confident
   }
 
+  /**
+   * True when the question refers to the selected project pronominally
+   * ("this project", "the project's architecture") instead of naming it.
+   * Keyword detection cannot see these, so the Orchestrator uses this to
+   * route such questions to the pinned project's context block.
+   */
+  static referencesActiveProject(text: string): boolean {
+    return (
+      /\b(?:this|that|the|my|our|your|current|selected|chosen)\s+(?:above\s+)?projects?\b/i.test(text) ||
+      /\bprojects?'?s?\s+(?:architecture|design|structure|overview|stack|tech stack)\b/i.test(text)
+    )
+  }
+
   static refine(text: string): string {
     const cleaned = text
       .replace(/\b(?:um|uh|like|you know|sort of|kind of)\b/gi, '')

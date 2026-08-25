@@ -133,6 +133,25 @@ describe('RouterService.shouldInjectProjectContext', () => {
   })
 })
 
+describe('RouterService.referencesActiveProject', () => {
+  it('matches pronominal references to the selected project', () => {
+    expect(RouterService.referencesActiveProject('Explain this project architecture in brief')).toBe(true)
+    expect(RouterService.referencesActiveProject('tell me about my project')).toBe(true)
+    expect(RouterService.referencesActiveProject('what is the current project tech stack')).toBe(true)
+    expect(RouterService.referencesActiveProject('walk me through your project overview')).toBe(true)
+    expect(RouterService.referencesActiveProject('describe the selected project challenges')).toBe(true)
+  })
+
+  it('rejects conceptual questions and named-project mentions', () => {
+    // Conceptual questions must stay generic even with a project pinned.
+    expect(RouterService.referencesActiveProject('What is Node JS?')).toBe(false)
+    expect(RouterService.referencesActiveProject('What is an AI Agent?')).toBe(false)
+    expect(RouterService.referencesActiveProject('What do you understand by Gen AI?')).toBe(false)
+    // Named projects are handled by keyword detection, not this pattern.
+    expect(RouterService.referencesActiveProject('explain the project_a pipeline')).toBe(false)
+  })
+})
+
 describe('RouterService.refine punctuation', () => {
   it('does not double existing terminal punctuation', () => {
     expect(RouterService.refine('Node.js.')).toBe('Node.js.')

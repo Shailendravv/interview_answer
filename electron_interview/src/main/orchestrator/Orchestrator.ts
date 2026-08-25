@@ -146,6 +146,18 @@ export class Orchestrator {
             refined_query: `Explain the ${project?.title ?? 'selected project'} comprehensively.`
           }
         }
+      } else if (
+        detection.id === null &&
+        (RouterService.referencesActiveProject(routeResult.refined_query) ||
+          RouterService.referencesActiveProject(transcript))
+      ) {
+        // Pronominal reference ("explain this project architecture") names no
+        // keyword, so detection sees nothing and heuristic routing classifies
+        // it as system_design/general — the model then answers with no
+        // [PROJECT CONTEXT] and hallucinates. Force the pinned project; when
+        // nothing is pinned, project_specific routes to the clarify block
+        // instead of an invented answer.
+        routeResult = { ...routeResult, category: 'project_specific' }
       }
 
       const routedNonCatalogProject =

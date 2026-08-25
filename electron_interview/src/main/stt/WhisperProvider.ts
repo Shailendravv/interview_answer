@@ -1,8 +1,11 @@
 import { ChildProcess, spawn } from 'child_process'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
+import { tmpdir, cpus } from 'os'
 import { BaseSTTEngine } from '../../shared/stt/sttProvider'
+
+// Match whisper-server's host thread count (physical-core estimate).
+const CLI_THREADS = Math.max(2, Math.floor(cpus().length / 2))
 
 interface WhisperConfig {
   modelPath: string
@@ -207,6 +210,7 @@ export class WhisperProvider extends BaseSTTEngine {
     const args = [
       '-m', this.config.modelPath,
       '-f', wavPath,
+      '-t', String(CLI_THREADS),
       '-l', this.config.language || 'en',
       '--no-prints',
       '-oj'

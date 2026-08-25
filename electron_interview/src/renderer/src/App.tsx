@@ -59,6 +59,7 @@ function App(): JSX.Element {
   const [projectsPayload, setProjectsPayload] =
     useState<ProjectListPayload>(EMPTY_PAYLOAD);
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstTokenSeenRef = useRef(false);
   const micFallbackRef = useRef(false);
   const startingRef = useRef(false);
   const recoveryCooldownRef = useRef(false);
@@ -191,9 +192,14 @@ function App(): JSX.Element {
       setLiveTranscript("");
     });
     api.on("answer:token", (token) => {
+      if (!firstTokenSeenRef.current) {
+        firstTokenSeenRef.current = true;
+        window.api.invoke("latency:ui").catch(() => {});
+      }
       appendAnswerToken(token as string);
     });
     api.on("answer:reset", () => {
+      firstTokenSeenRef.current = false;
       resetAnswer();
     });
     api.on("answer:done", (data) => {

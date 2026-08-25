@@ -1,8 +1,14 @@
 import { ChildProcess, spawn } from 'child_process'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
+import { tmpdir, cpus } from 'os'
 import { BaseSTTEngine } from '../../shared/stt/sttProvider'
+import { latencyTracer } from '../telemetry/LatencyTracer'
+
+// Host threads for the server process. With a GPU build the CPU mostly feeds
+// samples, but pinning to physical cores avoids hyperthread thrash on CPU
+// fallback builds.
+const SERVER_THREADS = Math.max(2, Math.floor(cpus().length / 2))
 
 interface ServerConfig {
   modelPath: string
@@ -105,6 +111,7 @@ export class WhisperServerProvider extends BaseSTTEngine {
 
     const args = [
       '-m', this.config.modelPath,
+      '-t', String(SERVER_THREADS),
       '-l', this.config.language || 'en',
       '--host', this.host,
       '--port', String(this.port)
@@ -316,6 +323,7 @@ export class WhisperServerProvider extends BaseSTTEngine {
     )
 
     try {
+      latencyTracer.markSttStage('T2')
       const form = new FormData()
       form.append('file', new Blob([wav], { type: 'audio/wav' }), 'chunk.wav')
       form.append('response_format', 'verbose_json')
@@ -335,15 +343,20 @@ export class WhisperServerProvider extends BaseSTTEngine {
 
       const result = await res.json() as {
         text?: string
-        segments?: { text: string; no_speech_prob?: number }[]
+        segments?: { text: string; no_speech_prob?: number; avg_logprob?: number }[]
       }
+      latencyTracer.markSttStage('T3')
       const segments = result.segments || []
       const kept: string[] = []
       for (const seg of segments) {
         const nsp = seg.no_speech_prob ?? 0
+        const lp = seg.avg_logprob ?? 0
         const segText = seg.text?.trim() || ''
-        if (nsp > this.noSpeechThreshold) {
-          console.log(`[whisper] dropped non-speech (nsp=${nsp.toFixed(3)}): "${segText}"`)
+        // OpenAI's joint rule: high no_speech_prob alone misclassifies real but
+        // uncertain speech (e.g. "…with Gen AI." at nsp=0.84). Drop only when the
+        // decoder ALSO lacks confidence (avg_logprob < -1).
+        if (nsp > this.noSpeechThreshold && lp < -1.0) {
+          console.log(`[whisper] dropped non-speech (nsp=${nsp.toFixed(3)} lp=${lp.toFixed(2)}): "${segText}"`)
           continue
         }
         if (segText) kept.push(segText)

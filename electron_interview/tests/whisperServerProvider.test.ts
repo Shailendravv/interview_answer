@@ -285,4 +285,43 @@ describe('WhisperServerProvider', () => {
     expect(sizes.every((s) => s <= 256 * 1024)).toBe(true)
     expect(sizes.reduce((a, b) => a + b, 0)).toBe(300 * 1024)
   })
+
+  describe('no-speech filtering (OpenAI joint semantics)', () => {
+    function makeSegmentProvider(
+      segments: { text: string; no_speech_prob?: number; avg_logprob?: number }[]
+    ): { provider: WhisperServerProvider; events: { text: string; isFinal: boolean }[] } {
+      const provider = makeProvider()
+      const events: { text: string; isFinal: boolean }[] = []
+      provider.on('transcript', (text, isFinal) => events.push({ text, isFinal }))
+      void provider.start().then(() => {
+        // start() installs default fetch; override after health resolves.
+        mocks.fetch.mockImplementation(async (url: string) => {
+          if (url.includes('/health')) return okJson({ status: 'ok' })
+          return okJson({ text: segments.map((s) => s.text).join(' '), segments })
+        })
+      })
+      return { provider, events }
+    }
+
+    it('keeps uncertain-but-confident speech (high nsp, good logprob)', async () => {
+      const { provider, events } = makeSegmentProvider([
+        { text: 'To understand with Gen AI.', no_speech_prob: 0.841, avg_logprob: -0.42 }
+      ])
+      await provider.start()
+      provider.feedAudioChunk(bytes(16000))
+      await vi.waitFor(() => expect(events).toHaveLength(1))
+      expect(events[0].text).toBe('To understand with Gen AI.')
+    })
+
+    it('still drops true non-speech (high nsp AND poor logprob)', async () => {
+      const { provider, events } = makeSegmentProvider([
+        { text: '…', no_speech_prob: 0.93, avg_logprob: -1.7 },
+        { text: 'real words', no_speech_prob: 0.05, avg_logprob: -0.5 }
+      ])
+      await provider.start()
+      provider.feedAudioChunk(bytes(16000))
+      await vi.waitFor(() => expect(events).toHaveLength(1))
+      expect(events[0].text).toBe('real words')
+    })
+  })
 })

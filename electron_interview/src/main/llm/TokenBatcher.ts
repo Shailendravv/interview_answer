@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/ipcChannels'
+import { latencyTracer } from '../telemetry/LatencyTracer'
 
 const FLUSH_INTERVAL_MS = 50
 const BATCH_SIZE = 10
@@ -11,6 +12,7 @@ export class TokenBatcher {
   private buffer: string[] = []
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private activeGeneration = 0
+  private firstFlushGenId = 0
 
   constructor(private window: BrowserWindow | null = null) {}
 
@@ -46,6 +48,10 @@ export class TokenBatcher {
     const batch = this.buffer.join('')
     this.buffer = []
     this.window.webContents.send(IPC.ANSWER_TOKEN, batch)
+    if (this.firstFlushGenId !== genId) {
+      this.firstFlushGenId = genId
+      latencyTracer.mark(genId, 'T7')
+    }
   }
 
   clear(): void {

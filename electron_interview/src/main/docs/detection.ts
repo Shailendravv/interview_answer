@@ -85,7 +85,9 @@ export function buildDetectionPatterns(sources: {
 
     for (const word of normalized.split(' ')) {
       const key = word.toLowerCase()
-      if (seen.has(key) || word.length < 2 || GENERIC_TOKEN_STOPLIST.has(key)) continue
+      // Sub-3-char tokens ("to", "ar", "cx") match far too much ordinary
+      // speech to be useful signals — they created phantom project hits.
+      if (seen.has(key) || word.length < 3 || GENERIC_TOKEN_STOPLIST.has(key)) continue
       seen.add(key)
       // A hyphenated compound ("financial-automation", "multi-llm") is a
       // distinctive project token, not generic speech — treat it as strong.

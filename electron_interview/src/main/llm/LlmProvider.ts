@@ -1,5 +1,12 @@
 import { EventEmitter } from 'events'
 
+export interface StreamTimeouts {
+  /** Max wait for the first bytes of the response. */
+  connectMs: number
+  /** Max silence between stream chunks; resets on every received chunk. */
+  idleMs: number
+}
+
 export interface GenerationRequest {
   model: string
   messages: { role: string; content: string }[]
@@ -7,6 +14,7 @@ export interface GenerationRequest {
   maxTokens?: number
   temperature?: number
   signal?: AbortSignal
+  timeouts?: StreamTimeouts
 }
 
 export interface GenerationResponse {

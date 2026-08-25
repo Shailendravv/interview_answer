@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -115,47 +115,73 @@ function StreamingCursor({ isStreaming }: { isStreaming: boolean }): JSX.Element
   );
 }
 
+interface MessageRowProps {
+  role: "user" | "assistant";
+  content: string;
+  isStreaming: boolean;
+}
+
+// Memoized per-message: token batches only change the LAST message, so every
+// earlier bubble skips re-render (and re-parsing its markdown) entirely.
+const MessageRow = memo(
+  function MessageRow({ role, content, isStreaming }: MessageRowProps): JSX.Element {
+    const isUser = role === "user";
+    return (
+      <div
+        className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+      >
+        <div
+          className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+            isUser
+              ? "bg-emerald-500/20 backdrop-blur-lg text-gray-100 rounded-br-md"
+              : "bg-white/10 backdrop-blur-lg text-gray-100 rounded-bl-md border border-white/20"
+          }`}
+        >
+          {isUser ? (
+            <p className="text-sm">{content}</p>
+          ) : isStreaming ? (
+            // Plain text while tokens arrive: no markdown re-parse per batch.
+            // Markdown rendering kicks in once the answer completes.
+            <span className="whitespace-pre-wrap">
+              {content}
+              <StreamingCursor isStreaming={isStreaming} />
+            </span>
+          ) : (
+            <MarkdownBlock content={content} />
+          )}
+        </div>
+      </div>
+    );
+  },
+  (prev, next) =>
+    prev.role === next.role &&
+    prev.content === next.content &&
+    prev.isStreaming === next.isStreaming
+);
+
 export function ChatView({ messages }: ChatViewProps): JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const last = messages[messages.length - 1];
+  const lastIsStreaming = Boolean(last?.role === "assistant" && last?.isStreaming);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, messages[messages.length - 1]?.content]);
+    bottomRef.current?.scrollIntoView({
+      behavior: lastIsStreaming ? "auto" : "smooth",
+    });
+  }, [messages.length, last?.content, lastIsStreaming]);
 
   if (messages.length === 0) return <></>;
 
   return (
     <div className="flex flex-col space-y-2">
-      {messages.map((msg, i) => {
-        const isStreaming = msg.role === "assistant" && Boolean(msg.isStreaming);
-        return (
-          <div
-            key={`${msg.role}-${i}`}
-            className={`flex ${
-              isStreaming ? "flex-1 min-h-0" : ""
-            } ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`${
-                isStreaming ? "h-full min-h-0 flex flex-col" : ""
-              } max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                msg.role === "user"
-                  ? "bg-emerald-500/20 backdrop-blur-lg text-gray-100 rounded-br-md"
-                  : "bg-white/10 backdrop-blur-lg text-gray-100 rounded-bl-md border border-white/20"
-              }`}
-            >
-              {msg.role === "assistant" ? (
-                <div className={`${isStreaming ? "flex-1 min-h-0 overflow-y-auto" : ""}`}>
-                  <MarkdownBlock content={msg.content} />
-                  <StreamingCursor isStreaming={isStreaming} />
-                </div>
-              ) : (
-                <p className="text-sm">{msg.content}</p>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {messages.map((msg, i) => (
+        <MessageRow
+          key={`${msg.role}-${i}`}
+          role={msg.role}
+          content={msg.content}
+          isStreaming={Boolean(msg.role === "assistant" && msg.isStreaming)}
+        />
+      ))}
       <div ref={bottomRef} />
     </div>
   );

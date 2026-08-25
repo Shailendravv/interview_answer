@@ -87,12 +87,20 @@ const ROUTER_CB_COOLDOWN_MS = 120000
 
 export class RouterService {
   private router: OllamaProvider
+  private llmEnabled: boolean
   private routeCache = new Map<string, RouterOutput>()
   private llmRouteFailures = 0
   private llmRouteCooldownUntil = 0
 
-  constructor(router: OllamaProvider) {
+  constructor(
+    router: OllamaProvider,
+    options: { llmEnabled?: boolean } = {}
+  ) {
     this.router = router
+    // The 0.5b LLM classifier costs a full local roundtrip on the hot path;
+    // deterministic routing (fastRoute/OOP/regex) covers typical phrasing, so
+    // the classifier is opt-in via ROUTER_LLM_ENABLED=1.
+    this.llmEnabled = options.llmEnabled ?? false
   }
 
   static detectProject(text: string): string | null {
@@ -165,6 +173,10 @@ export class RouterService {
         project_id: RouterService.detectProject(transcript),
         refined_query: RouterService.refine(transcript)
       }
+    }
+
+    if (!this.llmEnabled) {
+      return RouterService.regexFallback(transcript)
     }
 
     try {
@@ -256,12 +268,30 @@ export class RouterService {
     return 'general'
   }
 
+  /**
+   * Decides whether [PROJECT CONTEXT] is injected for this turn.
+   * Confident keyword hits always inject. Weak (non-confident) hits inject
+   * ONLY when the route itself says the question is about the candidate's
+   * project — a single generic token ("agent", "data") must not hijack
+   * conceptual questions like "What is an AI Agent?".
+   */
+  static shouldInjectProjectContext(
+    detection: { id: string | null; confident: boolean; ambiguous: boolean },
+    category: RouterOutput['category'],
+    routedNonCatalogProject: boolean
+  ): boolean {
+    if (category === 'project_specific') return true
+    if (routedNonCatalogProject) return true
+    return detection.id !== null && !detection.ambiguous && detection.confident
+  }
+
   static refine(text: string): string {
-    return text
+    const cleaned = text
       .replace(/\b(?:um|uh|like|you know|sort of|kind of)\b/gi, '')
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/^[a-z]/, (c) => c.toUpperCase())
-      + (text.endsWith('?') ? '' : '.')
+    if (/[?.!]$/.test(cleaned)) return cleaned
+    return /[a-z0-9)]$/i.test(cleaned) ? `${cleaned}.` : cleaned
   }
 }

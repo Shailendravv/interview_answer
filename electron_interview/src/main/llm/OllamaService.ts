@@ -1,4 +1,5 @@
 import { spawn, ChildProcess } from 'child_process'
+import { createIdleAbortSignal } from './idleSignal'
 
 
 export interface OllamaModel {
@@ -168,56 +169,55 @@ export class OllamaService {
     model: string,
     messages: { role: string; content: string }[],
     stream = true,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    timeouts?: { connectMs: number; idleMs: number }
   ): Promise<Response> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(new DOMException('Ollama generation timed out after 15s', 'TimeoutError')), 15000)
-    const onAbort = (): void => {
-      clearTimeout(timer)
-      controller.abort(signal?.reason)
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
-
-    try {
-      const res = await fetch(`${this.baseUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, stream, keep_alive: -1 }),
-        signal: controller.signal
-      })
-      if (res.ok) {
-        this.models.set(model, true)
-      }
-      return res
-    } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-    }
+    return this.streamRequest(`${this.baseUrl}/api/chat`, { model, messages, stream }, signal, timeouts)
   }
 
-  async generate(model: string, prompt: string, stream = true, signal?: AbortSignal): Promise<Response> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(new DOMException('Ollama generation timed out after 15s', 'TimeoutError')), 15000)
-    const onAbort = (): void => {
-      clearTimeout(timer)
-      controller.abort(signal?.reason)
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
+  async generate(
+    model: string,
+    prompt: string,
+    stream = true,
+    signal?: AbortSignal,
+    timeouts?: { connectMs: number; idleMs: number }
+  ): Promise<Response> {
+    return this.streamRequest(`${this.baseUrl}/api/generate`, { model, prompt, stream }, signal, timeouts)
+  }
+
+  /**
+   * Streams are bounded by connect/idle windows instead of a total-duration
+   * timer: a long but steadily-producing answer must never be cut off, while
+   * a stalled server is dropped quickly.
+   */
+  private async streamRequest(
+    url: string,
+    payload: Record<string, unknown>,
+    signal?: AbortSignal,
+    timeouts?: { connectMs: number; idleMs: number }
+  ): Promise<Response> {
+    const connectMs = timeouts?.connectMs ?? 10000
+    const idleMs = timeouts?.idleMs ?? 30000
+    const idle = createIdleAbortSignal(connectMs, idleMs, signal)
 
     try {
-      const res = await fetch(`${this.baseUrl}/api/generate`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, prompt, stream, keep_alive: -1 }),
-        signal: controller.signal
+        body: JSON.stringify({ ...payload, keep_alive: -1 }),
+        signal: idle.signal
       })
       if (res.ok) {
-        this.models.set(model, true)
+        this.models.set(String(payload.model), true)
       }
       return res
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new Error(`Ollama stream stalled at ${url} (${connectMs}/${idleMs}ms connect/idle)`)
+      }
+      throw err
     } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
+      idle.dispose()
     }
   }
 

@@ -8,6 +8,10 @@ const TOKENS_PER_CHAR_CODE = 0.5
 const RECENT_PAIRS = 3
 const SUMMARY_TOKEN_TARGET = 150
 const MAX_HISTORY_ANSWER_CHARS = 400
+// Background summarization shares the local model with answer generation; a
+// summary racing the next question would queue behind/ahead of it and inflate
+// TTFT. Wait for a quiet window instead.
+const SUMMARY_IDLE_DELAY_MS = 5000
 
 interface QAPair {
   question: string
@@ -29,6 +33,9 @@ export class ContextService {
   private interviewId: number | null = null
   private recentPairs: QAPair[] = []
   private summaryCache: string | null = null
+  private generationBusy = false
+  private lastGenerationDoneAt = 0
+  private summarizationTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private db: DatabaseService,
@@ -122,8 +129,23 @@ export class ContextService {
     return `${answer.slice(0, MAX_HISTORY_ANSWER_CHARS)}…`
   }
 
+  /** Orchestrator marks the span of active answer generation. */
+  notifyGenerationStart(): void {
+    this.generationBusy = true
+  }
+
+  notifyGenerationEnd(): void {
+    this.generationBusy = false
+    this.lastGenerationDoneAt = Date.now()
+  }
+
   private triggerSummarization(): void {
     if (!this.interviewId) return
+
+    if (this.generationBusy || Date.now() - this.lastGenerationDoneAt < SUMMARY_IDLE_DELAY_MS) {
+      this.scheduleSummarizationRetry()
+      return
+    }
 
     const allMessages = this.db.getAllMessages(this.interviewId)
     const olderMessages = allMessages.slice(0, -(RECENT_PAIRS * 2))
@@ -154,6 +176,14 @@ export class ContextService {
         }
       } catch { /* background summarization failed */ }
     })()
+  }
+
+  private scheduleSummarizationRetry(): void {
+    if (this.summarizationTimer) return
+    this.summarizationTimer = setTimeout(() => {
+      this.summarizationTimer = null
+      this.triggerSummarization()
+    }, SUMMARY_IDLE_DELAY_MS)
   }
 
   private estimateTokens(text: string): number {

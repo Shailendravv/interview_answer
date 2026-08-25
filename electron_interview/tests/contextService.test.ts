@@ -113,3 +113,55 @@ describe('ContextService.buildPrompt', () => {
     expect(built.systemExtra).toContain('financial automation block')
   })
 })
+
+describe('ContextService summarization deferral', () => {
+  const bigHistory = async (ctx: ContextService): Promise<void> => {
+    for (let i = 0; i < 5; i++) {
+      await ctx.addInteraction(`Question ${i}: ` + 'x'.repeat(400), `Answer ${i}: ` + 'y'.repeat(1200))
+    }
+  }
+
+  it('postpones summarization while a generation is active, then runs it', async () => {
+    vi.useFakeTimers()
+    try {
+      const summarizer = makeSummarizer()
+      const ctx = new ContextService(makeDb(), summarizer)
+      await ctx.startNewInterview('test')
+
+      ctx.notifyGenerationStart()
+      await bigHistory(ctx)
+
+      // Generation active: no competing local LLM work may start.
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(summarizer.generate).not.toHaveBeenCalled()
+
+      // After generation ends (+ idle delay), summarization proceeds.
+      ctx.notifyGenerationEnd()
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(summarizer.generate).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits out the post-generation idle window even when never notified busy', async () => {
+    vi.useFakeTimers()
+    try {
+      const summarizer = makeSummarizer()
+      const ctx = new ContextService(makeDb(), summarizer)
+      await ctx.startNewInterview('test')
+
+      ctx.notifyGenerationStart()
+      ctx.notifyGenerationEnd() // answer finished just now
+      await bigHistory(ctx)
+
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(summarizer.generate).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(summarizer.generate).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

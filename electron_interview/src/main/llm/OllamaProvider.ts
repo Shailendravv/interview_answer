@@ -21,8 +21,8 @@ export class OllamaProvider extends LlmProvider {
     let response: Response
     try {
       response = multiTurn
-        ? await this.ollama.chat(this.modelName, req.messages, true, req.signal)
-        : await this.ollama.generate(this.modelName, prompt, true, req.signal)
+        ? await this.ollama.chat(this.modelName, req.messages, true, req.signal, req.timeouts)
+        : await this.ollama.generate(this.modelName, prompt, true, req.signal, req.timeouts)
     } catch (err) {
       throw this.friendlyUnreachableError(err)
     }

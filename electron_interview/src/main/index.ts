@@ -20,6 +20,7 @@ import { HistoryService } from "./history/HistoryService";
 import { TrayService } from "./tray/TrayService";
 import { ProjectCatalogService } from "./docs/ProjectCatalogService";
 import { IPC } from "../shared/ipcChannels";
+import { latencyTracer } from "./telemetry/LatencyTracer";
 
 function loadDotEnv(): void {
   // `resolve(__dirname, "../../.env")` only exists in dev (project root). In the
@@ -148,13 +149,26 @@ const sttConfig = {
   whisperInitialPrompt:
     process.env.STT_PROMPT ||
     process.env.WHISPER_INITIAL_PROMPT ||
-    "Interview Q&A. Technical terms: Node.js, JavaScript, TypeScript, React, Python, API, database, algorithm, system design, frontend, backend.",
+    // Style cue only — NO vocabulary. Listing tech terms ("React", "Node.js")
+    // biases short-utterance decoding: whisper injects those tokens into the
+    // transcript and skips low-content lead-ins ("What is …").
+    "Interview question and answer conversation, clear English speech.",
   whisperNoSpeechThreshold:
     Number(process.env.WHISPER_NO_SPEECH_THRESHOLD) || 0.6,
   silenceTimeoutMs: Number(process.env.SILENCE_TIMEOUT_MS) || 750,
   vadPadFrames: Number(process.env.VAD_PAD_FRAMES) || 10,
   vadMaxSegmentMs: Number(process.env.VAD_MAX_SEGMENT_MS) || 8000,
 };
+
+// A keyword-list STT prompt biases decoding: whisper injects those tokens into
+// short-utterance transcripts ("React is AI agent") and drops lead-ins
+// ("What is …"). Surface the misconfiguration at startup instead of in QA.
+if (/keywords?\s*:/i.test(sttConfig.whisperInitialPrompt ?? "")) {
+  console.warn(
+    "[whisper] STT prompt lists keywords — known to leak terms into transcripts " +
+      "of short questions. Prefer a vocabulary-free style cue (see .env.example)."
+  );
+}
 
 const llmKeys = {
   groq: process.env.GROQ_API_KEY,
@@ -240,6 +254,11 @@ ipcMain.handle(IPC.PROJECTS_OPEN, async () => {
 ipcMain.handle(IPC.WINDOW_GET_STATE, () => ({
   isAlwaysOnTop: Boolean(mainWindow?.isAlwaysOnTop()),
 }));
+
+// Latency telemetry: renderer acknowledges first token receipt (T8)
+ipcMain.handle(IPC.LATENCY_UI, () => {
+  latencyTracer.mark(latencyTracer.getActive(), "T8");
+});
 
 // Pinned project selection (renderer → main)
 ipcMain.on(IPC.SESSION_SET_PROJECT, (_event, projectId: string | null) => {
@@ -365,8 +384,10 @@ async function createWindow(): Promise<void> {
     console.error("LLM init failed (degraded mode):", err);
   }
 
-  // Initialize orchestrator
-  orchestrator = new Orchestrator(llmOrchestrator, projectCatalog);
+  // Initialize orchestrator (LLM classifier router is opt-in: ROUTER_LLM_ENABLED=1)
+  orchestrator = new Orchestrator(llmOrchestrator, projectCatalog, {
+    routerLlmEnabled: process.env.ROUTER_LLM_ENABLED === "1",
+  });
   orchestrator.setWindow(win);
   if (pendingGenerationModel) {
     orchestrator.setGenerationModel(pendingGenerationModel);

@@ -52,5 +52,9 @@ export const IPC = {
   // Status
   STATUS_UPDATE: 'status:update',
   ERROR_OCCURRED: 'error:occurred',
-  STT_STATUS: 'stt:status'
+  STT_STATUS: 'stt:status',
+
+  // Latency telemetry (main → renderer; renderer invoke → main)
+  LATENCY_REPORT: 'latency:report',
+  LATENCY_UI: 'latency:ui'
 } as const

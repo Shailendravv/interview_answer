@@ -6,6 +6,7 @@ import { STTEngine } from '../../shared/stt/sttProvider'
 import { createSttService, SttServiceConfig } from '../stt/SttService'
 import { SentenceDetector } from '../stt/SentenceDetector'
 import { cleanTranscript } from '../stt/transcriptFilter'
+import { latencyTracer } from '../telemetry/LatencyTracer'
 
 export type TranscriptCallback = (text: string) => void
 
@@ -160,6 +161,11 @@ export class AudioService {
       if (msg.type === 'ready') {
         this.workerReady = true
       } else if (msg.type === 'segment' && msg.data) {
+        // End-of-speech estimate: the VAD already waited padFrames of silence
+        // before emitting, so speech stopped ~padMs before this moment.
+        const now = performance.now()
+        const frameMs = 512 / 16000 * 1000
+        latencyTracer.beginSegment(now - this.padFrameCount() * frameMs, now)
         const buf = Buffer.from(msg.data)
         this.segments.push(buf)
         this.stt?.feedAudioChunk(buf)
@@ -202,6 +208,10 @@ export class AudioService {
     const ms = this.sttConfig.vadMaxSegmentMs ?? 8000
     const frames = Math.round((ms / 1000) * 16000 / 512)
     return Math.max(1, frames)
+  }
+
+  private padFrameCount(): number {
+    return Math.max(1, this.sttConfig.vadPadFrames ?? 10)
   }
 
   destroy(): void {

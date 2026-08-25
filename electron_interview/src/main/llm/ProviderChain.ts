@@ -5,7 +5,8 @@ import { describeError } from './errors'
 export interface ProviderEntry {
   provider: LlmProvider
   circuitBreaker: CircuitBreaker
-  timeoutMs: number
+  connectMs: number
+  idleMs: number
 }
 
 const STATE_LABELS: Record<CircuitState, string> = {
@@ -14,27 +15,31 @@ const STATE_LABELS: Record<CircuitState, string> = {
   [CircuitState.HalfOpen]: 'half-open'
 }
 
-function combineSignals(...signals: (AbortSignal | undefined)[]): AbortController {
+/** Combine only EXTERNAL cancel signals; stall protection lives in providers. */
+function combineExternal(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
   const controller = new AbortController()
-  for (const signal of signals) {
-    if (signal?.aborted) {
-      controller.abort(signal.reason)
-      return controller
-    }
-    signal?.addEventListener('abort', () => controller.abort(signal.reason), { once: true })
-  }
-  return controller
+  if (a?.aborted) controller.abort(a.reason)
+  else a?.addEventListener('abort', () => controller.abort(a.reason), { once: true })
+  if (b.aborted) controller.abort(b.reason)
+  else b.addEventListener('abort', () => controller.abort(b.reason), { once: true })
+  return controller.signal
 }
 
 export class ProviderChain extends LlmProvider {
   readonly name = 'provider-chain'
   private providers: ProviderEntry[] = []
 
-  addProvider(provider: LlmProvider, maxFailures = 3, timeoutMs = 5000): void {
+  addProvider(
+    provider: LlmProvider,
+    maxFailures = 3,
+    connectMs = 10000,
+    idleMs = 30000
+  ): void {
     this.providers.push({
       provider,
       circuitBreaker: new CircuitBreaker(provider.name, maxFailures),
-      timeoutMs
+      connectMs,
+      idleMs
     })
   }
 
@@ -66,10 +71,13 @@ export class ProviderChain extends LlmProvider {
     entry: ProviderEntry,
     req: GenerationRequest
   ): AsyncGenerator<string, GenerationResponse, void> {
-    const timeoutSignal = AbortSignal.timeout(entry.timeoutMs)
-    const combined = combineSignals(req.signal, timeoutSignal)
-
-    const gen = entry.provider.generate({ ...req, signal: combined.signal })
+    // Connect/idle windows ride on the request; each provider enforces them
+    // around its own transport (a total-duration cap here would truncate
+    // long-but-healthy streams).
+    const gen = entry.provider.generate({
+      ...req,
+      timeouts: { connectMs: entry.connectMs, idleMs: entry.idleMs }
+    })
     let fullText = ''
 
     try {
@@ -85,12 +93,6 @@ export class ProviderChain extends LlmProvider {
       return { text: fullText, provider: entry.provider.name, model: req.model }
     } catch (err) {
       if (err instanceof Error && (err.name === 'AbortError' || err.cause === 'aborted')) {
-        const timedOut = timeoutSignal.aborted && !req.signal?.aborted
-        if (timedOut) {
-          entry.circuitBreaker.recordFailure()
-          this.emit('warning', `${entry.provider.name} timed out after ${entry.timeoutMs}ms`)
-          throw new Error(`${entry.provider.name} timed out after ${entry.timeoutMs}ms`)
-        }
         throw err
       }
       entry.circuitBreaker.recordFailure()
@@ -110,11 +112,8 @@ export class ProviderChain extends LlmProvider {
       controller: controllers[idx],
       iterator: entry.provider.generate({
         ...req,
-        signal: combineSignals(
-          req.signal,
-          AbortSignal.timeout(entry.timeoutMs),
-          controllers[idx].signal
-        ).signal
+        signal: combineExternal(req.signal, controllers[idx].signal),
+        timeouts: { connectMs: entry.connectMs, idleMs: entry.idleMs }
       })[Symbol.asyncIterator]()
     }))
 

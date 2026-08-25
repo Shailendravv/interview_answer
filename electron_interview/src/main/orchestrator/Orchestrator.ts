@@ -12,6 +12,7 @@ import { SYSTEM_PROMPTS } from './SystemPrompts'
 import { AnswerSanitizer } from '../context/AnswerSanitizer'
 import { isSimilarTranscript } from './transcriptSimilarity'
 import { describeError } from '../llm/errors'
+import { latencyTracer } from '../telemetry/LatencyTracer'
 
 const GENERIC_QUERY_PATTERN = /^(everything|explain|tell me more|tell me about it|more|all of it|all|go on|continue|elaborate)\.?$/i
 
@@ -32,11 +33,14 @@ export class Orchestrator {
 
   constructor(
     llmOrchestrator: LlmOrchestrator,
-    projectCatalog: ProjectCatalogService
+    projectCatalog: ProjectCatalogService,
+    options: { routerLlmEnabled?: boolean } = {}
   ) {
     this.llmOrchestrator = llmOrchestrator
     this.projectCatalog = projectCatalog
-    this.routerService = new RouterService(llmOrchestrator.getRouter())
+    this.routerService = new RouterService(llmOrchestrator.getRouter(), {
+      llmEnabled: options.routerLlmEnabled ?? false
+    })
     this.dbService = new DatabaseService()
     this.contextService = new ContextService(this.dbService, llmOrchestrator.getRouter())
 
@@ -95,6 +99,11 @@ export class Orchestrator {
     const abort = new AbortController()
     this.currentAbort = abort
 
+    // Adopt the STT-side marks (T0-T3) recorded before a genId existed.
+    latencyTracer.adoptStt(genId)
+    latencyTracer.mark(genId, 'T4')
+    this.contextService.notifyGenerationStart()
+
     try {
       this.sendStatus('processing')
 
@@ -141,11 +150,11 @@ export class Orchestrator {
 
       const routedNonCatalogProject =
         routeResult.project_id && !this.projectCatalog.has(routeResult.project_id)
-      const explicitMention = detection.id !== null && !detection.ambiguous
-      const isProjectQuery =
-        explicitMention ||
-        routeResult.category === 'project_specific' ||
+      const isProjectQuery = RouterService.shouldInjectProjectContext(
+        detection,
+        routeResult.category,
         Boolean(routedNonCatalogProject)
+      )
 
       let contextTexts: string[] = []
 
@@ -201,6 +210,7 @@ export class Orchestrator {
       }
       this.window?.webContents.send(IPC.ANSWER_ERROR, describeError(err))
     } finally {
+      this.contextService.notifyGenerationEnd()
       if (this.tokenBatcher.isActive(genId)) {
         this.isProcessing = false
         this.lastProcessedTranscript = null
@@ -278,6 +288,8 @@ export class Orchestrator {
     this.window.webContents.send(IPC.ANSWER_RESET)
     this.window.webContents.send(IPC.TRANSCRIPT_FINAL, transcript)
 
+    latencyTracer.mark(genId, 'T5')
+
     const gen = this.llmOrchestrator.getGenerationChain().generate({
       model: route.category,
       messages,
@@ -292,6 +304,7 @@ export class Orchestrator {
     const sanitizer = new AnswerSanitizer({ refinedQuery: route.refined_query })
 
     let fullAnswer = ''
+    let seenFirstToken = false
     const emitLine = (line: string): void => {
       fullAnswer += line
       this.pushToken(line, genId)
@@ -300,6 +313,10 @@ export class Orchestrator {
     for await (const token of gen) {
       if (signal?.aborted || !this.tokenBatcher.isActive(genId)) {
         return fullAnswer
+      }
+      if (!seenFirstToken) {
+        seenFirstToken = true
+        latencyTracer.mark(genId, 'T6')
       }
       for (const line of sanitizer.push(token)) emitLine(line)
     }
@@ -313,6 +330,15 @@ export class Orchestrator {
 
     this.flushTokenBuffer(genId)
     this.window.webContents.send(IPC.ANSWER_DONE, { question: transcript })
+
+    const report = latencyTracer.report(genId)
+    if (report) {
+      console.log(latencyTracer.formatReport(report))
+      this.window.webContents.send(IPC.LATENCY_REPORT, {
+        genId: report.genId,
+        deltas: report.deltas
+      })
+    }
 
     this.contextService.addInteraction(
       route.refined_query || transcript,

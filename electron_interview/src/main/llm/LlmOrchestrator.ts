@@ -57,13 +57,16 @@ export class LlmOrchestrator {
   private buildGenerationChain(model: 'ollama' | 'groq'): ProviderChain {
     const chain = new ProviderChain()
     if (model === 'groq' && this.groqProvider) {
-      chain.addProvider(this.groqProvider, 3, 5000)
+      // Groq TTFT ≈0.1-0.3s and chunk gaps are ms-scale: tight idle window.
+      chain.addProvider(this.groqProvider, 3, 10000, 8000)
     } else {
-      // Local Ollama is the default generator — high failure tolerance, longer timeout
+      // Local Ollama is the default generator — high failure tolerance.
+      // Generous idle window: a cold model load can pause output for seconds.
       chain.addProvider(
         new OllamaProvider(this.ollamaService, 'qwen2.5-coder:1.5b'),
         10,
-        15000
+        10000,
+        30000
       )
     }
     return chain

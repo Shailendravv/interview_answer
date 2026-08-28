@@ -4,14 +4,6 @@
     "title": "Full-Stack Developer | React, Next.js, Node.js | AI & Agentic Systems",
     "summary": "Full-stack software engineer with 4+ years of experience building scalable web, mobile, and desktop applications. Proficient in React.js, Next.js, React Native, Node.js, and FastAPI, with deep expertise in Generative and Agentic AI — integrating LLMs (OpenAI, Claude, Vertex AI), orchestrating agentic workflows with LangChain and LangGraph, and building RAG and OCR/PDF data-extraction pipelines. Experienced with enterprise integrations (SharePoint, SAP), cloud deployment (AWS, GCP, Azure), and database optimization (MongoDB, PostgreSQL).",
     "skills": [
-      "React.js",
-      "Next.js",
-      "React Native",
-      "TypeScript",
-      "Node.js",
-      "Express.js",
-      "FastAPI",
-      "Python",
       "OpenAI",
       "Claude",
       "Vertex AI",
@@ -19,6 +11,14 @@
       "LangGraph",
       "RAG",
       "Agentic AI",
+      "Python",
+      "FastAPI",
+      "React.js",
+      "Next.js",
+      "React Native",
+      "TypeScript",
+      "Node.js",
+      "Express.js",
       "MongoDB",
       "PostgreSQL",
       "AWS",
@@ -30,22 +30,29 @@
   },
   "projects": [
     {
-      "id": "financial-automation",
+      "id": "billing-automation",
       "type": "Project",
-      "title": "Financial Automation Platform",
-      "description": "AI-driven finance automation platform for AR reconciliation, transaction matching, and Human-in-the-Loop validation (CBRE).",
-      "tags": ["finance", "genai", "fullstack"],
+      "title": "Billing Validation & Automation Platform",
+      "description": "AI-assisted billing validation and workflow automation platform for processing client billing requests, validating invoices and supporting evidence, managing Human-in-the-Loop reviews, and streamlining ERP processing across multiple billing types.",
+      "tags": ["finance", "billing", "genai", "automation", "fullstack"],
       "keywords": [
+        "billing",
+        "invoice validation",
+        "payment records",
         "finance",
-        "automation",
-        "remittance",
-        "transaction matching",
-        "accounts receivable",
-        "AR aging",
-        "bank statement",
+        "business rules",
+        "deterministic rules",
+        "LLM validation",
         "HITL",
-        "CBRE",
-        "vertex ai"
+        "PeopleSoft",
+        "GCP",
+        "RBAC",
+        "ABAC",
+        "audit service",
+        "IPE",
+        "checklist",
+        "ERP processing",
+        "bot automation"
       ],
       "body": {
         "role": "Full Stack Developer",
@@ -55,30 +62,66 @@
           "Tailwind CSS",
           "FastAPI",
           "Python",
-          "Vertex AI",
           "OpenAI",
-          "SharePoint API",
-          "AWS"
+          "GCP",
+          "PeopleSoft",
+          "openpyxl"
         ],
         "architecture": [
-          "Next.js full-stack frontend with Tailwind CSS for real-time AR visualization.",
-          "FastAPI backend with Python services for transaction matching and exception handling.",
-          "SharePoint-based bank statement ingestion pipeline feeding LLM workflows.",
-          "Vertex AI-powered LLM workflows with Human-in-the-Loop validation gates.",
-          "Cloud-deployed infrastructure for scalability, reliability, and high availability."
+          "Billing requests are received through email with supporting Excel and XLSM documents attached.",
+          "An ingestion agent developed by the CBRE team parses incoming documents and extracts the required files and billing information, replacing the previously manual document-processing workflow.",
+          "CBRE-provided business rules are implemented as billing-type-specific checklists, validations, and IPE (Input Processing and Evaluation) requirements. Most validations are deterministic, while LLM-based validation is used for cases requiring contextual or visual understanding.",
+          "LLM-assisted validation is used for scenarios such as extracting date and time information from screenshots embedded inside XLSM files, replicating validation steps previously performed manually by finance users.",
+          "The billing type is identified during the validation stage, and the billing request is routed through the appropriate processing stages based on its billing type.",
+          "The web application provides a centralized list of billing requests with filtering, status tracking, and assignment capabilities. Requests can be assigned to users across multiple operational groups, including teams handling PeopleSoft US and Canada processes.",
+          "A details page provides the primary Human-in-the-Loop workflow. Billing requests following the happy path can automatically progress to the closed state, while exceptions or validations requiring human intervention are routed for review.",
+          "HITL controls ensure that users can edit billing information only after the request has been explicitly assigned to them. User actions and modifications are tracked through an audit service integrated across the application's APIs.",
+          "Line items can be exported, reviewed and edited by finance users, and the updated information can be downloaded again as an Excel file for downstream processing.",
+          "Users can modify validation results, including checklists and IPE validations. Once the required validations are completed, the billing request automatically progresses to the ERP processing stage.",
+          "For PeopleSoft US and Canada workflows, users can upload GWS files generated from exported application data. The system processes the uploaded GWS file and generates a Bill Hold template, which can then be uploaded into PeopleSoft.",
+          "Users can upload the final invoice and complete the remaining validation steps before closing the billing request.",
+          "The platform supports multiple billing types, including Standard Billing, Direct Billing, MIP, and MIP + Billing, with business-specific validation and processing requirements."
         ],
         "features": [
-          "Real-time AR aging analysis and transaction monitoring.",
-          "Automated remittance matching with intelligent exception handling.",
-          "Advanced filtering and financial visibility dashboards.",
-          "Human-in-the-Loop review for ambiguous transactions."
+          "Email-based ingestion of Excel and XLSM billing documents.",
+          "Automated document parsing and extraction through the existing CBRE ingestion agent.",
+          "Billing-type-specific checklists, validations, and IPE workflows based on CBRE business rules.",
+          "Combination of deterministic business rules and LLM-based validation for complex cases.",
+          "LLM-assisted extraction of contextual information such as date and time from screenshots embedded in XLSM files.",
+          "Centralized billing request dashboard with filtering, status tracking, and user assignment capabilities.",
+          "Multi-stage billing workflow that routes requests according to their billing type and validation state.",
+          "Human-in-the-Loop workflow for exception handling and manual validation.",
+          "Automatic happy-path processing that allows successfully validated billing requests to move directly toward closure.",
+          "Assignment-based editing permissions to ensure only the assigned user can modify a billing request.",
+          "API-level audit tracking for user actions and data modifications.",
+          "Line-item export, editing, and Excel re-upload/download capabilities.",
+          "Dynamic editing of checklist and IPE validations with automatic progression to ERP processing.",
+          "GWS file processing and Bill Hold template generation for PeopleSoft US and Canada workflows.",
+          "Final invoice upload and billing request closure workflow.",
+          "Role-Based Access Control (RBAC) and Attribute-Based Access Control (ABAC) for secure access management.",
+          "Foundation for progressive automation of repetitive billing operations through bots."
         ],
         "challenges": [
-          "Accurately matching remittances against open invoices at scale.",
-          "Designing HITL flows that keep humans in control of exceptions."
+          "Translating the finance team's existing manual billing validation process into structured checklists, deterministic rules, IPE validations, and LLM-assisted decision workflows.",
+          "Handling multiple billing types such as Standard Billing, Direct Billing, MIP, and MIP + Billing, each with different business rules and processing requirements.",
+          "Replicating human validation steps that required contextual and visual interpretation, such as identifying specific rows, symbols, and date/time information from screenshots embedded in XLSM files.",
+          "Initially used Pandas for Excel parsing, but processing large XLSX/XLSM files was slower because of the way files were loaded and processed. Switched to openpyxl for read-oriented workloads where only data extraction was required before sending relevant information to the LLM.",
+          "Production POD crashes occurred while processing large files, with some files reaching approximately 200 MB and causing significant memory consumption. Implemented streaming-based processing and garbage collection after each validation cycle to release memory before processing subsequent validations.",
+          "Designing HITL controls so that users could edit requests only after assignment while maintaining a complete audit trail across API operations.",
+          "Creating reliable stage transitions so that successful happy-path requests could proceed automatically while exception cases were routed to the appropriate human validation workflow.",
+          "Building integrations and processing workflows around PeopleSoft US and Canada requirements, including GWS file processing and Bill Hold template generation.",
+          "Gaining client confidence in the proposed GCP architecture by developing a POC first, validating the approach, and progressively moving the solution through MVP and production."
         ],
         "accomplishments": [
-          "End-to-end delivery of a production finance automation platform."
+          "Converted a largely manual billing validation workflow into a structured, rule-driven, and AI-assisted platform.",
+          "Successfully implemented billing workflows across multiple billing types with configurable validation requirements.",
+          "Combined deterministic business rules with LLM-based validation to replicate both rule-based and contextual human decision-making.",
+          "Delivered the solution from POC to MVP and production on GCP.",
+          "Improved large-file Excel processing efficiency by replacing Pandas-based parsing with openpyxl for read-oriented workloads.",
+          "Reduced production memory issues through streaming and post-validation garbage collection techniques.",
+          "Implemented end-to-end HITL workflows with assignment-based editing, audit tracking, validation management, and automated stage progression.",
+          "Automated downstream PeopleSoft US and Canada processes through GWS file processing and Bill Hold template generation.",
+          "Established a scalable foundation for further automation using bots and progressively reducing manual billing operations."
         ]
       }
     },
@@ -86,18 +129,24 @@
       "id": "sales-intelligence",
       "type": "Project",
       "title": "Sales Intelligence Platform",
-      "description": "AI-powered sales platform that analyzes customer data, generates personalized communication, and improves client engagement with data-driven insights (VEOLIA).",
+      "description": "AI-powered sales intelligence platform for analyzing customer data, providing client-specific insights, and generating personalized email and speech pitches to improve sales representative engagement with customers (VEOLIA).",
       "tags": ["sales", "genai", "fullstack"],
       "keywords": [
         "sales",
         "intelligence",
-        "crm",
+        "CRM",
+        "customer analytics",
         "email generation",
+        "speech generation",
         "chatbot",
         "client engagement",
         "dashboard",
-        "VEOLIA",
-        "speech assistance"
+        "trend analysis",
+        "personalization",
+        "multilingual AI",
+        "French",
+        "English",
+        "VEOLIA"
       ],
       "body": {
         "role": "Full Stack Developer",
@@ -113,23 +162,49 @@
           "Claude"
         ],
         "architecture": [
-          "React.js frontend with Material UI for interactive dashboards and client detail views.",
-          "FastAPI backend services for data processing and AI-powered features.",
-          "Pandas and NumPy pipelines to transform large-scale Excel datasets.",
-          "Integrated AI features for contextual email generation and client-specific chatbots."
+          "Sales management team provides the latest customer and sales data through Excel files, and the application automatically processes the newest available file.",
+          "Pandas and NumPy pipelines are used to process, transform, and structure approximately 2,000 customer records before storing the required information in the application's database.",
+          "FastAPI backend services handle data processing, client information retrieval, and AI-powered personalization workflows.",
+          "React.js frontend with Material UI provides grid and list-based customer views along with detailed client information pages.",
+          "Client-specific context is prepared from customer, product, service, and sales data and passed to AI workflows for generating personalized sales email and speech content.",
+          "AI-generated sales pitches support both English and French based on the language associated with the logged-in sales representative.",
+          "User information is maintained in a dedicated user table, including the user's language or regional association, which determines the appropriate UI context and generated sales communication.",
+          "Each client detail page provides a contextual chatbot that uses the client's available information to answer sales-related questions and assist representatives during customer interactions."
         ],
         "features": [
-          "Trend analysis and product-level drill-downs.",
-          "Contextual email generation and speech assistance.",
-          "Client-specific chatbot interactions for real-time sales queries.",
-          "Advanced filtering, search, and visualization of customer data."
+          "Automatic processing of the newest Excel file provided by the sales management team.",
+          "Centralized customer data management with approximately 2,000 client records.",
+          "Home dashboard with Grid View and List View for accessing customer information.",
+          "Grid View highlights the top 10 customers recently contacted by the logged-in sales representative.",
+          "Client cards provide quick navigation to detailed customer information.",
+          "Client detail pages display customer information, frequently purchased products, relevant services to offer, brief client summaries, and trend analysis.",
+          "Interactive product-level drill-down allowing sales representatives to explore details of frequently used products.",
+          "Data-driven graphical charts for visualizing customer and sales trends.",
+          "AI-powered personalization section that generates contextual email and sales speech content.",
+          "Client-specific chatbot available directly within each client detail page using the customer's information as context.",
+          "List View provides access to all available customers with filtering and search capabilities.",
+          "Customer filtering allows sales representatives to quickly locate and open a specific client detail page.",
+          "Multilingual sales communication supporting both English and French.",
+          "User-based language configuration determines the language of generated email and speech pitches and the corresponding UI context.",
+          "Personalized sales recommendations based on customer history, frequently used products, services, and trend data."
         ],
         "challenges": [
-          "Processing and transforming very large Excel datasets efficiently.",
-          "Generating personalized, context-aware client communication."
+          "Processing the latest Excel dataset reliably and transforming raw sales and customer information into a structured format suitable for database storage and application consumption.",
+          "Handling approximately 2,000 customer records while providing responsive filtering, searching, and navigation in the web application.",
+          "Creating meaningful client-specific context from multiple customer attributes to generate useful and personalized AI sales pitches.",
+          "Ensuring AI-generated email and speech content remained relevant to the specific customer's products, services, history, and sales context.",
+          "Supporting multilingual sales communication by generating consistent and contextually relevant content in both English and French.",
+          "Designing client-specific chatbot workflows that provide useful responses while maintaining the appropriate customer context.",
+          "Presenting complex customer trends and sales information through intuitive dashboards, charts, grid views, and detailed client pages."
         ],
         "accomplishments": [
-          "Shipped a production AI sales platform improving client engagement."
+          "Delivered a production AI-powered sales intelligence platform for customer analysis and sales representative enablement.",
+          "Automated the processing of the latest sales management Excel data and integrated the transformed information into the application database.",
+          "Built an interactive customer experience supporting approximately 2,000 clients through Grid View, List View, filtering, search, and detailed client pages.",
+          "Implemented AI-powered personalized email and speech generation using client-specific sales context.",
+          "Enabled multilingual sales pitches in English and French based on sales representative configuration.",
+          "Implemented client-specific conversational assistance through contextual chatbots.",
+          "Provided data-driven trend analysis, product insights, and visualization capabilities to help sales representatives make informed customer engagement decisions."
         ]
       }
     },
@@ -191,17 +266,26 @@
       "id": "biomedical-research",
       "type": "Project",
       "title": "Biomedical Research Platform",
-      "description": "AI-powered platform for multi-paper summarization, protocol insights, and topic modelling to support advanced scientific analysis (Genentech).",
+      "description": "AI-powered biomedical research platform for PubMed literature discovery, scientific document retrieval, document-level Q&A, multi-paper summarization, and biomedical entity extraction to support research analysis (Genentech).",
       "tags": ["research", "genai", "fullstack"],
       "keywords": [
         "biomedical",
         "research",
+        "PubMed",
+        "Entrez",
+        "paper search",
+        "metadata",
+        "PDF",
+        "NXML",
         "paper summarization",
         "multi paper",
         "topic modelling",
-        "protocol",
-        "Genentech",
-        "scientific"
+        "biomedical NLP",
+        "BioNER",
+        "RAG",
+        "FAISS",
+        "AWS Bedrock",
+        "Genentech"
       ],
       "body": {
         "role": "Full Stack Developer",
@@ -212,25 +296,63 @@
           "Redux Toolkit",
           "FastAPI",
           "Python",
-          "AWS"
+          "AWS",
+          "AWS Bedrock",
+          "FAISS",
+          "Entrez",
+          "BeautifulSoup"
         ],
         "architecture": [
-          "React.js frontend with Tailwind CSS and Redux Toolkit for research data visualization.",
-          "FastAPI backend for protocol summaries, topic modelling, and AI research workflows.",
-          "Seamless frontend-backend integration for research data interaction.",
-          "AWS-deployed components for scalable, reliable operations."
+          "React.js frontend with Tailwind CSS and Redux Toolkit for biomedical literature search, document interaction, and research data visualization.",
+          "FastAPI backend services for PubMed metadata retrieval, document downloading, processing, embedding, and AI-powered research workflows.",
+          "Entrez library integration for searching and retrieving biomedical publication metadata from PubMed.",
+          "PubMed metadata is presented in a structured table, allowing researchers to review and select relevant scientific publications.",
+          "Open-access PubMed Central documents are retrieved using PMCID-based PDF and tarball endpoints, with downloaded archives extracted into a clean processing directory.",
+          "Downloaded research documents are processed in PDF and NXML formats for downstream text extraction and analysis.",
+          "Document processing pipeline performs text extraction, chunking, and embedding generation before storing vector representations in a FAISS vector database.",
+          "AWS Bedrock Amazon Titan Embed Text v2 model is used to generate embeddings for biomedical document chunks.",
+          "FAISS is used as the vector database for storing and retrieving relevant document chunks for chatbot-based question answering.",
+          "AWS Bedrock Amazon Titan Text Express v1 is used as the chatbot model for document-based research Q&A.",
+          "Manual document upload is supported so researchers can upload documents directly and interact with them through the chatbot.",
+          "Multi-paper summarization pipeline extracts text from PDF and NXML documents, chunks the content to remain within model limits, and uses the BioNER model to identify biomedical organism taxonomic entities.",
+          "BeautifulSoup is used to parse NXML content and extract structured scientific text for downstream multi-paper analysis."
         ],
         "features": [
-          "Multi-paper summarization for scientific literature.",
-          "Protocol insights and topic modelling.",
-          "Responsive research data visualization and interaction."
+          "PubMed metadata search using the Entrez library.",
+          "Structured table-based visualization of biomedical publication metadata.",
+          "PDF URL generation and retrieval for available PubMed Central documents.",
+          "Download and extraction of open-access research paper tarball files.",
+          "Support for processing both PDF and NXML research documents.",
+          "Manual document upload for researchers who want to analyze their own documents.",
+          "Document chunking and embedding pipeline for semantic search.",
+          "FAISS vector database for storing document embeddings and retrieving relevant research content.",
+          "RAG-based document Q&A chatbot powered by AWS Bedrock.",
+          "Fixed-type research questions for extracting specific scientific information from documents.",
+          "Question answering for protein expression sections.",
+          "Question answering for protein purification sections.",
+          "Question answering for construct generation sections where applicable.",
+          "Multi-paper summarization workflow for synthesizing information across scientific documents.",
+          "Biomedical entity extraction using the MilosKosRad/BioNER model with a focus on the Organism Taxon label.",
+          "NXML parsing and text extraction using BeautifulSoup for scientific document processing."
         ],
         "challenges": [
-          "Synthesizing insights across many research papers accurately.",
-          "Keeping research workflows scalable and reliable."
+          "Retrieving biomedical publication metadata and identifying the appropriate open-access documents for downstream processing.",
+          "Handling different document formats, including PDF and NXML, and extracting usable scientific text from each format.",
+          "Processing large research documents by chunking text to remain within model token limits.",
+          "Building an embedding pipeline that converts research document chunks into searchable vector representations.",
+          "Designing document-level Q&A so that responses are grounded in the uploaded or retrieved research documents.",
+          "Handling scientific questions that require locating specific sections such as expression, purification, and construct generation.",
+          "Extracting relevant biomedical entities from scientific papers for multi-paper analysis using a specialized biomedical NER model.",
+          "Combining document retrieval, vector search, embedding generation, and LLM-based responses into a reliable research workflow."
         ],
         "accomplishments": [
-          "Delivered a scalable AI biomedical research platform on AWS."
+          "Delivered a biomedical research platform integrating PubMed search, scientific document retrieval, document processing, semantic search, and AI-powered Q&A.",
+          "Implemented an end-to-end document pipeline covering PDF/NXML retrieval, text extraction, chunking, embedding, vector storage, and chatbot-based question answering.",
+          "Integrated AWS Bedrock Titan Embed Text v2 for biomedical document embeddings and Titan Text Express v1 for research-focused chatbot interactions.",
+          "Implemented FAISS-based vector search to retrieve relevant research content for document-grounded Q&A.",
+          "Built fixed-type scientific Q&A capabilities for extracting information related to protein expression, purification, and construct generation.",
+          "Implemented a multi-paper processing pipeline using BioNER for biomedical organism taxon extraction and scientific text analysis.",
+          "Enabled researchers to search PubMed literature, visualize metadata, download available research documents, and analyze documents through an interactive research workflow."
         ]
       }
     },

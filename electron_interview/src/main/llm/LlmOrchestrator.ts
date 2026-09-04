@@ -9,6 +9,10 @@ import { GeminiProvider } from './cloud/GeminiProvider'
 import { NVIDIAProvider } from './cloud/NVIDIAProvider'
 import { OpenRouterProvider } from './cloud/OpenRouterProvider'
 
+// A socket stays pooled for only a few seconds, but re-handshaking on every
+// utterance in a rapid back-and-forth is wasteful. One warm-up per window.
+const PRECONNECT_THROTTLE_MS = 3000
+
 interface ProviderKeys {
   groq?: string
   groqModel?: string
@@ -26,6 +30,8 @@ export class LlmOrchestrator {
   private cloudProviders: LlmProvider[] = []
   private groqProvider: GroqProvider | null = null
   private generationModel: 'ollama' | 'groq' = 'ollama'
+
+  private lastPreconnectAt = 0
 
   constructor(keys: ProviderKeys) {
     this.ollamaService = new OllamaService()
@@ -98,6 +104,27 @@ export class LlmOrchestrator {
     for (const provider of this.cloudProviders) {
       provider.healthCheck().catch(() => {})
     }
+  }
+
+  /**
+   * Opens a socket to the active cloud provider so the request that follows
+   * does not pay for one. Node's fetch keeps pooled sockets for only ~4s, and
+   * questions in an interview are tens of seconds apart, so without this every
+   * single answer pays a fresh DNS + TCP + TLS handshake (~100-300ms) before
+   * the model has even seen the prompt.
+   *
+   * Called on VAD speech onset -- while the speaker is still talking -- so the
+   * handshake overlaps time that was being spent anyway. This is a connection
+   * warm-up, not an inference: no tokens are generated and no prompt is sent.
+   */
+  preconnect(): void {
+    if (this.generationModel !== 'groq' || !this.groqProvider) return
+
+    const now = Date.now()
+    if (now - this.lastPreconnectAt < PRECONNECT_THROTTLE_MS) return
+    this.lastPreconnectAt = now
+
+    this.groqProvider.healthCheck().catch(() => {})
   }
 
   getRouter(): OllamaProvider {

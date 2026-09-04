@@ -120,20 +120,23 @@ export class WhisperProvider extends BaseSTTEngine {
     if (all.length > MAX_CHUNK_BYTES) {
       // Send only the head of an oversized chunk; the tail stays queued so the
       // next flush/finalize transcribes it (whisper degrades on long audio).
+      // The head is NOT the last piece: letting it consume finalizePending
+      // would leave the tail emitting final=false, which fires the
+      // SentenceDetector a second time on the same utterance.
       this.pendingBuffer.unshift(Buffer.from(all.subarray(MAX_CHUNK_BYTES)))
-      this.transcribeChunk(Buffer.from(all.subarray(0, MAX_CHUNK_BYTES)), isFinal)
+      this.transcribeChunk(Buffer.from(all.subarray(0, MAX_CHUNK_BYTES)), isFinal, false)
       return
     }
 
     this.transcribeChunk(all, isFinal)
   }
 
-  private transcribeChunk(pcm16: Buffer, isFinal: boolean): void {
+  private transcribeChunk(pcm16: Buffer, isFinal: boolean, isLastPiece = true): void {
     if (!this.tempDir) return
 
     const wavPath = join(this.tempDir, `chunk_${Date.now()}.wav`)
     writeFileSync(wavPath, this.pcmToWav(pcm16))
-    this.runWhisper(wavPath, isFinal)
+    this.runWhisper(wavPath, isFinal, isLastPiece)
   }
 
   private flushPending(isFinal = false): void {
@@ -206,7 +209,7 @@ export class WhisperProvider extends BaseSTTEngine {
     return ''
   }
 
-  private runWhisper(wavPath: string, isFinal: boolean): void {
+  private runWhisper(wavPath: string, isFinal: boolean, isLastPiece = true): void {
     const args = [
       '-m', this.config.modelPath,
       '-f', wavPath,
@@ -228,8 +231,9 @@ export class WhisperProvider extends BaseSTTEngine {
     this.process.on('close', (code) => {
       this.process = null
 
-      const shouldFinalize = isFinal || this.finalizePending
-      this.finalizePending = false
+      // Only the last piece of a split may consume finalizePending.
+      const shouldFinalize = isLastPiece && (isFinal || this.finalizePending)
+      if (isLastPiece) this.finalizePending = false
 
       if (code === 0 && stdout) {
         const text = this.parseTranscript(stdout)

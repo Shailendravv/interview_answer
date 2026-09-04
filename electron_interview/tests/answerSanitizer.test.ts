@@ -65,11 +65,50 @@ describe('AnswerSanitizer', () => {
 
   it('carries a partial final line across flush', () => {
     const sanitizer = new AnswerSanitizer({ refinedQuery: '' })
-    sanitizer.push('Hello wor')
-    sanitizer.push('ld\nWith')
-    expect(sanitizer.flush()).toEqual(['With'])
+    let out = ''
+    out += sanitizer.push('Hello wor').join('')
+    out += sanitizer.push('ld\nWith').join('')
+    out += sanitizer.flush().join('')
+    expect(out).toBe('Hello world\nWith')
     // buffer fully drained
     expect(sanitizer.flush()).toEqual([])
+  })
+
+  it('streams a line out as it arrives instead of holding it for the newline', () => {
+    // Holding whole lines stalled the first visible word for as long as the
+    // model took to finish its opening line.
+    const sanitizer = new AnswerSanitizer({ refinedQuery: 'what is oops' })
+    expect(sanitizer.push('Encapsulation ').join('')).toBe('Encapsulation ')
+    expect(sanitizer.push('bundles state').join('')).toBe('bundles state')
+    expect(sanitizer.push(' and behaviour.\n').join('')).toBe(' and behaviour.\n')
+  })
+
+  it('withholds a partial line that could still become a dropped marker', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: '' })
+    // Still a prefix of "[CURRENT QUESTION ...": emitting now would be a leak.
+    expect(sanitizer.push('[CURRENT QUE').join('')).toBe('')
+    expect(sanitizer.push('STION - answer ONLY this]\n').join('')).toBe('')
+  })
+
+  it('withholds a partial line that could still be a reprint of the question', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: 'what is oops' })
+    expect(sanitizer.push('What is ').join('')).toBe('')
+    expect(sanitizer.push('oops\n').join('')).toBe('')
+  })
+
+  it('releases a line once it diverges from the question text', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: 'what is oops' })
+    expect(sanitizer.push('What is ').join('')).toBe('')
+    // Longer than the question, so it can no longer be a verbatim reprint.
+    expect(sanitizer.push('oops used for?').join('')).toBe('What is oops used for?')
+  })
+
+  it('never streams a partial token that could grow into <think>', () => {
+    const sanitizer = new AnswerSanitizer({ refinedQuery: '' })
+    let streamed = sanitizer.push('Answer <').join('')
+    expect(streamed).toBe('Answer ')
+    streamed += sanitizer.push('think>hidden</think> done\n').join('')
+    expect(streamed).toBe('Answer  done\n')
   })
 
   it('strips a <think> block on a single line', () => {

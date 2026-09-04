@@ -287,8 +287,12 @@ export class WhisperServerProvider extends BaseSTTEngine {
     if (all.length > MAX_CHUNK_BYTES) {
       // Send only the head of an oversized chunk; the tail stays queued so the
       // next flush/finalize transcribes it (whisper degrades on long audio).
+      // The head is NOT the last piece: if it consumed finalizePending, the
+      // tail would emit final=false, the SentenceDetector would fall through to
+      // its silence timer and fire a second time, and the orchestrator would
+      // abort the in-flight answer to restart on the tail alone.
       this.pendingBuffer.unshift(Buffer.from(all.subarray(MAX_CHUNK_BYTES)))
-      this.transcribe(Buffer.from(all.subarray(0, MAX_CHUNK_BYTES)), isFinal)
+      this.transcribe(Buffer.from(all.subarray(0, MAX_CHUNK_BYTES)), isFinal, false)
       return
     }
 
@@ -313,7 +317,7 @@ export class WhisperServerProvider extends BaseSTTEngine {
     this.transcribeAccumulated(isFinal)
   }
 
-  private async transcribe(pcm16: Buffer, isFinal: boolean): Promise<void> {
+  private async transcribe(pcm16: Buffer, isFinal: boolean, isLastPiece = true): Promise<void> {
     const wav = this.pcmToWav(pcm16)
     const controller = new AbortController()
     this.abortController = controller
@@ -362,8 +366,9 @@ export class WhisperServerProvider extends BaseSTTEngine {
         if (segText) kept.push(segText)
       }
       if (kept.length > 0) {
-        const shouldFinalize = isFinal || this.finalizePending
-        this.finalizePending = false
+        // Only the last piece of a split may consume finalizePending.
+        const shouldFinalize = isLastPiece && (isFinal || this.finalizePending)
+        if (isLastPiece) this.finalizePending = false
         const text = kept.join(' ').trim()
         console.log(`[whisper] text="${text}" (${segments.length} segs, ${kept.length} kept)`)
         this.emit('transcript', text, shouldFinalize)

@@ -3,7 +3,10 @@ import { IPC } from '../../shared/ipcChannels'
 import { latencyTracer } from '../telemetry/LatencyTracer'
 
 const FLUSH_INTERVAL_MS = 50
-const BATCH_SIZE = 10
+// Characters, not array entries. The sanitizer used to hand this whole lines,
+// so a 10-entry threshold meant 10 lines and the size trigger never fired --
+// every flush waited out the timer, including the first one.
+const BATCH_CHARS = 80
 
 // Buffers answer tokens for the active generation only. Tokens from a stale
 // (cancelled) generation are dropped so a superseded answer can never bleed
@@ -32,7 +35,10 @@ export class TokenBatcher {
   push(token: string, genId: number): void {
     if (genId !== this.activeGeneration) return
     this.buffer.push(token)
-    if (this.buffer.length >= BATCH_SIZE) {
+    // The first payload of a generation goes out immediately: that flush is
+    // the first visible word, and making it wait for the timer put up to 50ms
+    // in front of every answer.
+    if (this.firstFlushGenId !== genId || this.bufferedChars() >= BATCH_CHARS) {
       this.flush(genId)
     } else if (!this.flushTimer) {
       this.flushTimer = setTimeout(() => {
@@ -52,6 +58,12 @@ export class TokenBatcher {
       this.firstFlushGenId = genId
       latencyTracer.mark(genId, 'T7')
     }
+  }
+
+  private bufferedChars(): number {
+    let n = 0
+    for (const token of this.buffer) n += token.length
+    return n
   }
 
   clear(): void {

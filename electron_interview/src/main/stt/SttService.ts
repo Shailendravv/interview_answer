@@ -18,8 +18,13 @@ export interface SttServiceConfig {
   whisperInitialPrompt?: string
   whisperNoSpeechThreshold?: number
   silenceTimeoutMs?: number
-  vadPadFrames?: number
+  /** Silence required to close a segment, in ms of audio (not frame counts). */
+  vadHangoverMs?: number
+  /** Audio kept from before the speech onset, so soft lead-ins survive. */
+  vadPreRollMs?: number
   vadMaxSegmentMs?: number
+  /** How long after end-of-speech a new segment still counts as the same question. */
+  continuationGraceMs?: number
 }
 
 class NoopSTTEngine extends EventEmitter implements STTEngine {

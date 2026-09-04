@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useAppStore } from "../store/appStore";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -9,7 +10,11 @@ interface ChatMessage {
 }
 
 interface ChatViewProps {
-  messages: ChatMessage[];
+  // History + the current question bubble — everything that changes at most
+  // once per turn. The in-flight streamed answer is appended internally (see
+  // below) so its ~50ms token-batch updates re-render only this component,
+  // not the parent that assembles staticMessages.
+  staticMessages: ChatMessage[];
 }
 
 function MarkdownBlock({ content }: { content: string }): JSX.Element {
@@ -159,7 +164,24 @@ const MessageRow = memo(
     prev.isStreaming === next.isStreaming
 );
 
-export function ChatView({ messages }: ChatViewProps): JSX.Element {
+export function ChatView({ staticMessages }: ChatViewProps): JSX.Element {
+  // Subscribed here (not in the parent) so streaming updates re-render only
+  // ChatView, not the whole App tree (TopBar, ProjectsView, status chrome).
+  const currentAnswer = useAppStore((s) => s.currentAnswer);
+  const status = useAppStore((s) => s.status);
+
+  const messages =
+    currentAnswer || status === "processing"
+      ? [
+          ...staticMessages,
+          {
+            role: "assistant" as const,
+            content: currentAnswer,
+            isStreaming: status === "processing",
+          },
+        ]
+      : staticMessages;
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const last = messages[messages.length - 1];
   const lastIsStreaming = Boolean(last?.role === "assistant" && last?.isStreaming);

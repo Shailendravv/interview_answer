@@ -18,7 +18,8 @@ const EMPTY_PAYLOAD: ProjectListPayload = {
 
 function App(): JSX.Element {
   const currentQuestion = useAppStore((s) => s.currentQuestion);
-  const currentAnswer = useAppStore((s) => s.currentAnswer);
+  // currentAnswer is intentionally NOT subscribed here — ChatView reads it
+  // directly so its ~50ms token-batch updates don't re-render all of App.
   const history = useAppStore((s) => s.history);
   const isListening = useAppStore((s) => s.isListening);
   const status = useAppStore((s) => s.status);
@@ -398,24 +399,18 @@ function App(): JSX.Element {
           ? "bg-red-800 text-red-300"
           : "bg-white/10 text-gray-400";
 
-  // Build messages for ChatView: history + current in-flight
+  // Build the low-frequency messages for ChatView: history + current
+  // question bubble. The in-flight streamed answer is appended inside
+  // ChatView itself (see its own currentAnswer subscription) so it doesn't
+  // force a re-render of this component on every token batch.
   const questionBubble = currentQuestion || liveTranscript;
-  const chatMessages = [
+  const staticMessages = [
     ...history.flatMap((qa) => [
       { role: "user" as const, content: qa.question },
       { role: "assistant" as const, content: qa.answer },
     ]),
     ...(questionBubble
       ? [{ role: "user" as const, content: questionBubble }]
-      : []),
-    ...(currentAnswer || status === "processing"
-      ? [
-          {
-            role: "assistant" as const,
-            content: currentAnswer,
-            isStreaming: status === "processing",
-          },
-        ]
       : []),
   ];
 
@@ -467,7 +462,7 @@ function App(): JSX.Element {
                       </span>
                     </div>
                   )}
-                  {chatMessages.length === 0 &&
+                  {staticMessages.length === 0 &&
                     status === "idle" &&
                     !isListening && (
                       <div className="flex justify-center pt-12">
@@ -486,7 +481,7 @@ function App(): JSX.Element {
                         </div>
                       </div>
                     )}
-                  {chatMessages.length === 0 && isListening && (
+                  {staticMessages.length === 0 && isListening && (
                     <div className="flex justify-start">
                       <div className="bg-white/10 backdrop-blur-xl rounded-2xl rounded-bl-md px-3 py-2 border border-white/20">
                         <p className="text-gray-400 text-xs italic">
@@ -495,7 +490,7 @@ function App(): JSX.Element {
                       </div>
                     </div>
                   )}
-                  <ChatView messages={chatMessages} />
+                  <ChatView staticMessages={staticMessages} />
                 </div>
                 <NotesPopover
                   open={notesOpen}
@@ -624,12 +619,19 @@ function App(): JSX.Element {
                     {status}
                   </span>
                   <span
+                    title={
+                      sttEngine && sttEngine !== "none" && sttEngine !== "whisper-server"
+                        ? "Degraded: GPU whisper-server is unavailable, transcription has fallen back to a slower engine"
+                        : undefined
+                    }
                     className={`px-2 py-0.5 rounded ${
                       sttEngine === "none"
                         ? "bg-red-500/20 text-red-300"
-                        : sttEngine
+                        : sttEngine === "whisper-server"
                           ? "bg-green-500/20 text-green-300"
-                          : "bg-white/10 text-gray-500"
+                          : sttEngine
+                            ? "bg-amber-500/20 text-amber-300 animate-pulse"
+                            : "bg-white/10 text-gray-500"
                     }`}
                   >
                     STT: {sttEngine || "..."}

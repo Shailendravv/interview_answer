@@ -134,6 +134,28 @@ console.log("[whisper] Resolved model:", whisperPaths.modelPath);
 console.log("[whisper] Resolved CLI binary:", whisperPaths.cliBinaryPath);
 console.log("[whisper] Resolved server binary:", whisperPaths.serverBinaryPath);
 
+// VAD_PAD_FRAMES counted whatever chunk the capture layer happened to send
+// (85ms @48kHz, 256ms @16kHz-native), so "10 frames" meant anywhere from 853ms
+// to 2.5s of hangover depending on the sound card -- not the 320ms it claimed.
+// The VAD now works in ms of audio. Honour the legacy var at its documented
+// 32ms/frame so existing .env files keep meaning what they said.
+function resolveVadHangoverMs(): number {
+  const explicit = Number(process.env.VAD_HANGOVER_MS);
+  if (explicit > 0) return explicit;
+
+  const legacyFrames = Number(process.env.VAD_PAD_FRAMES);
+  if (legacyFrames > 0) {
+    const ms = legacyFrames * 32;
+    console.warn(
+      `[vad] VAD_PAD_FRAMES is deprecated; using VAD_HANGOVER_MS=${ms}. ` +
+        "Set VAD_HANGOVER_MS directly (default 350)."
+    );
+    return ms;
+  }
+
+  return 350;
+}
+
 const sttConfig = {
   mode: (DEEPGRAM_API_KEY ? "deepgram" : STT_MODE) as
     | "whisper"
@@ -156,8 +178,10 @@ const sttConfig = {
   whisperNoSpeechThreshold:
     Number(process.env.WHISPER_NO_SPEECH_THRESHOLD) || 0.6,
   silenceTimeoutMs: Number(process.env.SILENCE_TIMEOUT_MS) || 750,
-  vadPadFrames: Number(process.env.VAD_PAD_FRAMES) || 10,
+  vadHangoverMs: resolveVadHangoverMs(),
+  vadPreRollMs: Number(process.env.VAD_PREROLL_MS) || 300,
   vadMaxSegmentMs: Number(process.env.VAD_MAX_SEGMENT_MS) || 8000,
+  continuationGraceMs: Number(process.env.CONTINUATION_GRACE_MS) || 900,
 };
 
 // A keyword-list STT prompt biases decoding: whisper injects those tokens into
@@ -203,7 +227,8 @@ type SnapPosition =
 
 // Register IPC handlers at module scope (before window renders)
 ipcMain.on("text:process", (_event, text: string) => {
-  orchestrator?.processTranscript(text);
+  // Typed input pre-empts a streaming answer; a spoken one queues behind it.
+  orchestrator?.processTranscript(text, "user");
 });
 ipcMain.on("session:start", () => {
   historyService.startSession();
@@ -260,11 +285,19 @@ ipcMain.handle(IPC.LATENCY_UI, () => {
   latencyTracer.mark(latencyTracer.getActive(), "T8");
 });
 
-// Pinned project selection (renderer → main)
+// Pinned project selection (renderer → main). The window is interactive while
+// the orchestrator is still being built behind LLM warmup, so a selection made
+// in that gap has nowhere to go — buffer it instead of dropping it, or the UI
+// shows a pinned project the answer path never received. `undefined` (not
+// `null`) is the empty sentinel: `null` is what "Clear project" sends.
+let pendingProjectId: string | null | undefined = undefined;
 ipcMain.on(IPC.SESSION_SET_PROJECT, (_event, projectId: string | null) => {
-  orchestrator?.setActiveProject(
-    typeof projectId === "string" ? projectId : null,
-  );
+  const id = typeof projectId === "string" ? projectId : null;
+  if (orchestrator) {
+    orchestrator.setActiveProject(id);
+  } else {
+    pendingProjectId = id;
+  }
 });
 
 // Window snapping (renderer → main)
@@ -393,6 +426,12 @@ async function createWindow(): Promise<void> {
     orchestrator.setGenerationModel(pendingGenerationModel);
     pendingGenerationModel = null;
   }
+  // Apply a project pinned while the orchestrator was still starting up.
+  if (pendingProjectId !== undefined) {
+    orchestrator.setActiveProject(pendingProjectId);
+    pendingProjectId = undefined;
+  }
+
   await orchestrator.startInterview("Interview Session");
 
   // Forward projects.json hot-reload to the renderer
@@ -409,6 +448,12 @@ async function createWindow(): Promise<void> {
   // Wire: final transcript → orchestrator processing
   audioService.setOnFinalTranscript((text) => {
     orchestrator?.processTranscript(text);
+  });
+
+  // Wire: speech onset → warm the cloud socket while the question is still
+  // being asked, so the TLS handshake is off the critical path.
+  audioService.setOnSpeechStart(() => {
+    llmOrchestrator.preconnect();
   });
 
   // Preload STT engine in the background so capture sessions start instantly.

@@ -17,6 +17,7 @@
     "noEmit": false
   },
   "include": [
+    "src/audio/**/*",
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*"

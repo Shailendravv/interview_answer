@@ -16,6 +16,8 @@ import { latencyTracer } from '../telemetry/LatencyTracer'
 
 const GENERIC_QUERY_PATTERN = /^(everything|explain|tell me more|tell me about it|more|all of it|all|go on|continue|elaborate)\.?$/i
 
+export type TranscriptSource = 'stt' | 'user'
+
 export class Orchestrator {
   private routerService: RouterService
   private contextService: ContextService
@@ -26,6 +28,8 @@ export class Orchestrator {
   private isProcessing = false
   private currentAbort: AbortController | null = null
   private lastProcessedTranscript: string | null = null
+  /** Single slot; a newer spoken question supersedes an older queued one. */
+  private queuedTranscript: string | null = null
   private tokenBatcher = new TokenBatcher()
   private generationCounter = 0
   private projectCatalog: ProjectCatalogService
@@ -78,7 +82,7 @@ export class Orchestrator {
     await this.contextService.startNewInterview(title)
   }
 
-  async processTranscript(transcript: string): Promise<void> {
+  async processTranscript(transcript: string, source: TranscriptSource = 'stt'): Promise<void> {
     const normalized = transcript.trim().toLowerCase()
 
     if (this.isProcessing && this.lastProcessedTranscript &&
@@ -86,6 +90,16 @@ export class Orchestrator {
       return
     }
     if (!this.window) return
+
+    // A spoken question never cancels the answer already streaming: aborting
+    // mid-stream sends ANSWER_RESET with no ANSWER_DONE, so the partial answer
+    // vanishes without ever entering history. Queue it and run it when the
+    // current answer finishes. Typed input still pre-empts, because a person
+    // typing is deliberately overriding what is on screen.
+    if (this.isProcessing && source === 'stt') {
+      this.queuedTranscript = transcript
+      return
+    }
 
     // Every transcript starts a new generation that supersedes the previous
     // one; stale generations may no longer stream tokens or emit ANSWER_DONE.
@@ -227,8 +241,17 @@ export class Orchestrator {
         this.isProcessing = false
         this.lastProcessedTranscript = null
         this.sendStatus('idle')
+        this.drainQueuedTranscript()
       }
     }
+  }
+
+  /** Runs a question that arrived while an answer was still streaming. */
+  private drainQueuedTranscript(): void {
+    const queued = this.queuedTranscript
+    this.queuedTranscript = null
+    if (!queued) return
+    void this.processTranscript(queued, 'stt')
   }
 
   private resolveProject(

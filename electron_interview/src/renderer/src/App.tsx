@@ -7,7 +7,7 @@ import {
 } from "./services/audioCapture";
 import { ChatView } from "./components/ChatView";
 import { TopBar } from "./components/TopBar";
-import { NotesPopover } from "./components/NotesPopover";
+import { ProjectScriptPanel } from "./components/ProjectScriptPanel";
 import { ProjectsView, ProjectListPayload } from "./components/ProjectsView";
 import { initStealth } from "./stealth";
 
@@ -492,10 +492,11 @@ function App(): JSX.Element {
                   )}
                   <ChatView staticMessages={staticMessages} />
                 </div>
-                <NotesPopover
+                <ProjectScriptPanel
                   open={notesOpen}
                   title={activeProject?.title ?? ""}
-                  content={activeProject?.notes ?? ""}
+                  script={activeProject?.script ?? null}
+                  notes={activeProject?.notes ?? ""}
                   onClose={() => setNotesOpen(false)}
                 />
               </div>

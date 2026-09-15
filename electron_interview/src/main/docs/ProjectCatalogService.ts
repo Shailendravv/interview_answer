@@ -7,6 +7,8 @@ import {
   ProjectListPayload,
   ProjectCardData
 } from './projectsTypes'
+import { buildInterviewScript } from './interviewScript'
+import type { InterviewScript } from '../../shared/interviewScript'
 import {
   ProjectDetectionEntry,
   buildDetectionPatterns,
@@ -21,6 +23,7 @@ export class ProjectCatalogService {
   private bundle: ProjectBundle = { introduction: { name: '', title: '', summary: '', skills: [] }, projects: [] }
   private index = new Map<string, ProjectConcept>()
   private promptBlocks = new Map<string, string>()
+  private scripts = new Map<string, InterviewScript>()
   private keywordEntries: ProjectKeywordEntry[] = []
   private watcher: FSWatcher | null = null
   private reloadTimer: NodeJS.Timeout | null = null
@@ -80,11 +83,13 @@ export class ProjectCatalogService {
   private rebuildIndexes(): void {
     this.index.clear()
     this.promptBlocks.clear()
+    this.scripts.clear()
     this.keywordEntries = []
 
     for (const project of this.bundle.projects) {
       this.index.set(project.id, project)
       this.promptBlocks.set(project.id, this.buildPromptBlock(project))
+      this.scripts.set(project.id, buildInterviewScript(project))
       this.keywordEntries.push({ project: project.id, patterns: this.buildPatterns(project) })
     }
   }
@@ -191,7 +196,8 @@ export class ProjectCatalogService {
       features: p.body.features,
       challenges: p.body.challenges,
       accomplishments: p.body.accomplishments,
-      notes: this.promptBlocks.get(p.id) ?? ''
+      notes: this.promptBlocks.get(p.id) ?? '',
+      script: this.scripts.get(p.id) ?? buildInterviewScript(p)
     }))
     return { introduction: this.bundle.introduction, projects: cards }
   }

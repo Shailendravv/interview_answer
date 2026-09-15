@@ -1,16 +1,28 @@
-# whisper.cpp is a separate repo / large build tree — keep it out of this repo
-whisper.cpp/
+# --- Editor / AI tooling ---
+.claude/
+.mcp.json
+Claude.md
 
+# Added by code-review-graph
+.code-review-graph/
+
+# --- Python ---
+.venv/
+
+# --- Node ---
 # Root tooling dependencies
 node_modules/
 
+# --- External / vendored repos ---
+# whisper.cpp is a separate repo / large build tree — keep it out of this repo
+whisper.cpp/
+
+# --- electron_interview project ---
 # CodeGraph SQLite DB
 electron_interview/.codegraph/
-electron_interview/.opencode/
 
 # Local-only living architecture doc (never pushed)
 electron_interview/docs/ARCHITECTURE.md
-
 
 # Project details file
 electron_interview/projects.example.json

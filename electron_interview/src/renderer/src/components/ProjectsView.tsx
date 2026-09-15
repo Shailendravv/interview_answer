@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { InterviewScript } from "../../../shared/interviewScript";
 
 export interface ProjectCardData {
   id: string;
@@ -13,6 +14,7 @@ export interface ProjectCardData {
   challenges: string[];
   accomplishments: string[];
   notes: string;
+  script: InterviewScript;
 }
 
 export interface ProjectListPayload {

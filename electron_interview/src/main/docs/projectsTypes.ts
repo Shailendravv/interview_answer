@@ -1,3 +1,5 @@
+import type { InterviewScript } from '../../shared/interviewScript'
+
 export interface Introduction {
   name: string
   title: string
@@ -43,6 +45,7 @@ export interface ProjectCardData {
   challenges: string[]
   accomplishments: string[]
   notes: string
+  script: InterviewScript
 }
 
 export interface ProjectListPayload {

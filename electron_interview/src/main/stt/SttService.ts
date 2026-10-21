@@ -3,13 +3,11 @@ import { STTEngine } from '../../shared/stt/sttProvider'
 import { EventEmitter } from 'events'
 import { WhisperProvider } from './WhisperProvider'
 import { WhisperServerProvider } from './WhisperServerProvider'
-import { ParakeetProvider } from './ParakeetProvider'
 import { DeepgramProvider } from './DeepgramProvider'
 
 export interface SttServiceConfig {
-  mode: 'whisper' | 'parakeet' | 'deepgram'
+  mode: 'whisper' | 'deepgram'
   deepgramApiKey?: string
-  parakeetServerUrl?: string
   whisperModelPath?: string
   whisperBinaryPath?: string
   whisperServerBinaryPath?: string
@@ -30,7 +28,7 @@ export interface SttServiceConfig {
 class NoopSTTEngine extends EventEmitter implements STTEngine {
   readonly name = 'none'
   async start(): Promise<void> {
-    const msg = 'No STT engine is available. Configure whisper.cpp, a Deepgram API key, or a Parakeet server.'
+    const msg = 'No STT engine is available. Configure whisper.cpp or a Deepgram API key.'
     console.warn('[STT] ' + msg)
     this.emit('status', { engine: 'none', error: msg })
     this.emit('error', new Error(msg))
@@ -184,10 +182,6 @@ export function createSttService(config: SttServiceConfig): STTEngine {
 
   if (config.deepgramApiKey) {
     engines.push(new DeepgramProvider({ apiKey: config.deepgramApiKey }))
-  }
-
-  if (config.parakeetServerUrl) {
-    engines.push(new ParakeetProvider({ serverUrl: config.parakeetServerUrl }))
   }
 
   if (engines.length === 0) {

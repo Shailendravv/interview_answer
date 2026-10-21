@@ -1,8 +1,11 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import { runMigrations } from './migrate'
 
-const SCHEMA = `
+// Version 1: the original schema. Append new migrations to MIGRATIONS below;
+// never edit this one (see migrate.ts).
+const SCHEMA_V1 = `
   CREATE TABLE IF NOT EXISTS interviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at INTEGER NOT NULL,
@@ -31,13 +34,15 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_summaries_interview ON summaries(interview_id);
 `
 
+const MIGRATIONS: readonly string[] = [SCHEMA_V1]
+
 export class DatabaseService {
   private db: Database.Database
 
   constructor() {
     const dbPath = join(app.getPath('userData'), 'interview-state.db')
     this.db = new Database(dbPath)
-    this.db.exec(SCHEMA)
+    runMigrations(this.db, MIGRATIONS)
   }
 
   createInterview(title = ''): number {

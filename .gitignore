@@ -21,8 +21,8 @@ whisper.cpp/
 # CodeGraph SQLite DB
 electron_interview/.codegraph/
 
-# Local-only living architecture doc (never pushed)
-electron_interview/docs/ARCHITECTURE.md
+# Local-only documentation (never pushed)
+electron_interview/docs/
 
 # Project details file
 electron_interview/projects.example.json

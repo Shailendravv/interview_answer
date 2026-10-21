@@ -12,9 +12,8 @@ export interface AudioChunk {
 }
 
 export interface STTConfig {
-  mode: 'whisper' | 'parakeet' | 'deepgram'
+  mode: 'whisper' | 'deepgram'
   deepgramApiKey?: string
-  parakeetServerUrl?: string
 }
 
 export interface LLMProviderConfig {

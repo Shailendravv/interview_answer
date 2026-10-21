@@ -1,4 +1,5 @@
 import { config as dotenvConfig } from "dotenv";
+import log from "electron-log/main";
 import { resolve, join } from "path";
 import { existsSync } from "fs";
 import {
@@ -21,6 +22,12 @@ import { TrayService } from "./tray/TrayService";
 import { ProjectCatalogService } from "./docs/ProjectCatalogService";
 import { IPC } from "../shared/ipcChannels";
 import { latencyTracer } from "./telemetry/LatencyTracer";
+
+// Persist every console.* call (main + renderer) to a rotating file so packaged
+// builds, which have no attached terminal, keep their diagnostics:
+// Windows %APPDATA%\<app>\logs\main.log, macOS ~/Library/Logs/<app>/main.log.
+log.initialize({ preload: false, spyRendererConsole: true });
+Object.assign(console, log.functions);
 
 function loadDotEnv(): void {
   // `resolve(__dirname, "../../.env")` only exists in dev (project root). In the
@@ -78,22 +85,20 @@ function resolveWhisperPaths(): WhisperPaths {
     resolve(__dirname, "..", ".."),
   ];
 
+  // MSVC (multi-config) builds put binaries in build/bin/Release/*.exe;
+  // single-config builds (Makefiles/Ninja on macOS) put them in build/bin/.
+  const isWindows = process.platform === "win32";
+  const binSubdir = isWindows ? ["build", "bin", "Release"] : ["build", "bin"];
+  const exeSuffix = isWindows ? ".exe" : "";
+
   for (const base of candidates) {
     const whisperDir = resolve(base, "whisper.cpp");
     const model = resolve(whisperDir, "models", "ggml-small.en.bin");
-    const cliBin = resolve(
-      whisperDir,
-      "build",
-      "bin",
-      "Release",
-      "whisper-cli.exe",
-    );
+    const cliBin = resolve(whisperDir, ...binSubdir, `whisper-cli${exeSuffix}`);
     const serverBin = resolve(
       whisperDir,
-      "build",
-      "bin",
-      "Release",
-      "whisper-server.exe",
+      ...binSubdir,
+      `whisper-server${exeSuffix}`,
     );
     if (existsSync(model)) {
       console.log("[whisper] Found model at:", model);
@@ -125,9 +130,14 @@ function resolveWhisperPaths(): WhisperPaths {
 
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "";
 const STT_MODE = process.env.STT_MODE || "whisper";
+// Electron 31 supports loopback (system) audio capture on Windows only.
+const LOOPBACK_SUPPORTED = process.platform === "win32";
+// Without loopback the mic is the only audio path, so default the fallback on.
 const MIC_FALLBACK_ENABLED =
-  process.env.AUDIO_MIC_FALLBACK === "1" ||
-  process.env.AUDIO_MIC_FALLBACK === "true";
+  process.env.AUDIO_MIC_FALLBACK === undefined
+    ? !LOOPBACK_SUPPORTED
+    : process.env.AUDIO_MIC_FALLBACK === "1" ||
+      process.env.AUDIO_MIC_FALLBACK === "true";
 
 const whisperPaths = resolveWhisperPaths();
 console.log("[whisper] Resolved model:", whisperPaths.modelPath);
@@ -159,10 +169,8 @@ function resolveVadHangoverMs(): number {
 const sttConfig = {
   mode: (DEEPGRAM_API_KEY ? "deepgram" : STT_MODE) as
     | "whisper"
-    | "parakeet"
     | "deepgram",
   deepgramApiKey: DEEPGRAM_API_KEY || undefined,
-  parakeetServerUrl: process.env.PARAKEET_SERVER_URL || undefined,
   whisperModelPath: whisperPaths.modelPath,
   whisperBinaryPath: whisperPaths.cliBinaryPath,
   whisperServerBinaryPath: whisperPaths.serverBinaryPath,
@@ -478,8 +486,10 @@ app.whenReady().then(async () => {
         types: ["screen"],
         thumbnailSize: { width: 0, height: 0 },
       });
+      // Elsewhere the stream has no audio track, so the renderer's
+      // startSystemCapture() rejects and the mic fallback takes over.
       callback({
-        audio: "loopback",
+        audio: LOOPBACK_SUPPORTED ? "loopback" : undefined,
         video: sources[0]
           ? { id: sources[0].id, name: sources[0].name }
           : undefined,
@@ -517,7 +527,7 @@ app.on("will-quit", () => {
 app.on("window-all-closed", () => {
   audioService?.destroy();
   orchestrator?.destroy();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // Quit on every platform, macOS included: the services above are torn down,
+  // and re-running createWindow() on "activate" would re-register IPC handlers.
+  app.quit();
 });

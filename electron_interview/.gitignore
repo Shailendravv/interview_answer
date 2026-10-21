@@ -36,8 +36,8 @@ Thumbs.db
 # Test coverage
 coverage/
 
-# Local-only living architecture doc (never pushed)
-/docs/ARCHITECTURE.md
+# Local-only documentation (never pushed)
+/docs/
 
 # Project details file
 electron_interview/projects.example.json

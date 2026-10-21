@@ -9,6 +9,7 @@ asar: true
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
 npmRebuild: true
+# Shared resources. Platform sections below append their own whisper binaries.
 extraResources:
   - from: .env
     to: .env
@@ -16,28 +17,56 @@ extraResources:
     to: projects.json
   - from: ../whisper.cpp/models/ggml-small.en.bin
     to: whisper.cpp/models/ggml-small.en.bin
-  - from: ../whisper.cpp/build/bin/Release/whisper-cli.exe
-    to: whisper.cpp/build/bin/Release/whisper-cli.exe
-  - from: ../whisper.cpp/build/bin/Release/whisper-server.exe
-    to: whisper.cpp/build/bin/Release/whisper-server.exe
-  - from: ../whisper.cpp/build/bin/Release/whisper.dll
-    to: whisper.cpp/build/bin/Release/whisper.dll
-  - from: ../whisper.cpp/build/bin/Release/ggml.dll
-    to: whisper.cpp/build/bin/Release/ggml.dll
-  - from: ../whisper.cpp/build/bin/Release/ggml-base.dll
-    to: whisper.cpp/build/bin/Release/ggml-base.dll
-  - from: ../whisper.cpp/build/bin/Release/ggml-cpu.dll
-    to: whisper.cpp/build/bin/Release/ggml-cpu.dll
-  - from: ../whisper.cpp/build/bin/Release/MSVCP140.dll
-    to: whisper.cpp/build/bin/Release/MSVCP140.dll
-  - from: ../whisper.cpp/build/bin/Release/VCRUNTIME140.dll
-    to: whisper.cpp/build/bin/Release/VCRUNTIME140.dll
-  - from: ../whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
-    to: whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
-  - from: ../whisper.cpp/build/bin/Release/VCOMP140.DLL
-    to: whisper.cpp/build/bin/Release/VCOMP140.DLL
+# Code signing: electron-builder signs automatically when CSC_LINK (certificate
+# path/URL/base64) and CSC_KEY_PASSWORD are set in the environment. Use
+# WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD to keep the Windows certificate separate.
 win:
   icon: build/app-icon.png
   target:
     - nsis
     - portable
+  extraResources:
+    - from: ../whisper.cpp/build/bin/Release/whisper-cli.exe
+      to: whisper.cpp/build/bin/Release/whisper-cli.exe
+    - from: ../whisper.cpp/build/bin/Release/whisper-server.exe
+      to: whisper.cpp/build/bin/Release/whisper-server.exe
+    - from: ../whisper.cpp/build/bin/Release/whisper.dll
+      to: whisper.cpp/build/bin/Release/whisper.dll
+    - from: ../whisper.cpp/build/bin/Release/ggml.dll
+      to: whisper.cpp/build/bin/Release/ggml.dll
+    - from: ../whisper.cpp/build/bin/Release/ggml-base.dll
+      to: whisper.cpp/build/bin/Release/ggml-base.dll
+    - from: ../whisper.cpp/build/bin/Release/ggml-cpu.dll
+      to: whisper.cpp/build/bin/Release/ggml-cpu.dll
+    - from: ../whisper.cpp/build/bin/Release/MSVCP140.dll
+      to: whisper.cpp/build/bin/Release/MSVCP140.dll
+    - from: ../whisper.cpp/build/bin/Release/VCRUNTIME140.dll
+      to: whisper.cpp/build/bin/Release/VCRUNTIME140.dll
+    - from: ../whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
+      to: whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
+    - from: ../whisper.cpp/build/bin/Release/VCOMP140.DLL
+      to: whisper.cpp/build/bin/Release/VCOMP140.DLL
+# macOS: build on a Mac. No `arch` is set, so the build targets the host's
+# architecture -- the same one the whisper.cpp binaries below were compiled for.
+# Notarization runs when APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER (or
+# APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID) are set; signing uses
+# CSC_LINK / CSC_KEY_PASSWORD (Developer ID Application certificate).
+mac:
+  icon: build/app-icon.png
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+  extendInfo:
+    NSMicrophoneUsageDescription: Records the interview audio so questions can be transcribed.
+  # Build whisper.cpp with -DBUILD_SHARED_LIBS=OFF so these binaries are
+  # self-contained (no libwhisper/libggml dylibs to bundle and re-link).
+  extraResources:
+    - from: ../whisper.cpp/build/bin/whisper-cli
+      to: whisper.cpp/build/bin/whisper-cli
+    - from: ../whisper.cpp/build/bin/whisper-server
+      to: whisper.cpp/build/bin/whisper-server

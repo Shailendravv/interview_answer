@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "description": "Real-Time AI Interview Assistant",
   "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "electron-vite build && electron-builder --win",
     "dist:portable": "electron-vite build && electron-builder --win portable",
+    "dist:mac": "electron-vite build && electron-builder --mac",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
@@ -19,6 +23,7 @@
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "dotenv": "^17.4.2",
+    "electron-log": "^5.4.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "ws": "^8.21.1",

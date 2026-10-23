@@ -54,6 +54,11 @@ export class Orchestrator {
 
     this.configureRouter()
     this.projectCatalog.onUpdate(() => this.configureRouter())
+
+    // Tell the UI when the selected model (Groq) failed and Ollama answered.
+    this.llmOrchestrator.onFallback((event) => {
+      this.window?.webContents.send(IPC.ANSWER_FALLBACK, event)
+    })
   }
 
   private configureRouter(): void {

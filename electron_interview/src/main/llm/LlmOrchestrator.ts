@@ -1,13 +1,7 @@
 import { OllamaService } from './OllamaService'
 import { OllamaProvider } from './OllamaProvider'
-import { ProviderChain } from './ProviderChain'
-import { LlmProvider, GenerationRequest, GenerationResponse } from './LlmProvider'
+import { ProviderChain, FallbackEvent } from './ProviderChain'
 import { GroqProvider } from './cloud/GroqProvider'
-import { CerebrasProvider } from './cloud/CerebrasProvider'
-import { SambaNovaProvider } from './cloud/SambaNovaProvider'
-import { GeminiProvider } from './cloud/GeminiProvider'
-import { NVIDIAProvider } from './cloud/NVIDIAProvider'
-import { OpenRouterProvider } from './cloud/OpenRouterProvider'
 
 // A socket stays pooled for only a few seconds, but re-handshaking on every
 // utterance in a rapid back-and-forth is wasteful. One warm-up per window.
@@ -16,42 +10,23 @@ const PRECONNECT_THROTTLE_MS = 3000
 interface ProviderKeys {
   groq?: string
   groqModel?: string
-  cerebras?: string
-  sambanova?: string
-  gemini?: string
-  nvidia?: string
-  openrouter?: string
 }
+
+export type GenerationModel = 'ollama' | 'groq'
 
 export class LlmOrchestrator {
   private ollamaService: OllamaService
   private chain: ProviderChain
   private router: OllamaProvider
-  private cloudProviders: LlmProvider[] = []
   private groqProvider: GroqProvider | null = null
-  private generationModel: 'ollama' | 'groq' = 'ollama'
+  private generationModel: GenerationModel = 'ollama'
+  private fallbackListeners: ((event: FallbackEvent) => void)[] = []
 
   private lastPreconnectAt = 0
 
   constructor(keys: ProviderKeys) {
     this.ollamaService = new OllamaService()
     this.router = new OllamaProvider(this.ollamaService)
-
-    const providerConfigs: { key: string | undefined; Provider: new (k: string) => LlmProvider }[] = [
-      { key: keys.groq, Provider: GroqProvider },
-      { key: keys.cerebras, Provider: CerebrasProvider },
-      { key: keys.sambanova, Provider: SambaNovaProvider },
-      { key: keys.gemini, Provider: GeminiProvider },
-      { key: keys.nvidia, Provider: NVIDIAProvider },
-      { key: keys.openrouter, Provider: OpenRouterProvider }
-    ]
-
-    for (const { key, Provider } of providerConfigs) {
-      if (key) {
-        const provider = new Provider(key)
-        this.cloudProviders.push(provider)
-      }
-    }
 
     if (keys.groq) {
       this.groqProvider = new GroqProvider(keys.groq, keys.groqModel)
@@ -60,25 +35,37 @@ export class LlmOrchestrator {
     this.chain = this.buildGenerationChain(this.generationModel)
   }
 
-  private buildGenerationChain(model: 'ollama' | 'groq'): ProviderChain {
+  private buildGenerationChain(model: GenerationModel): ProviderChain {
     const chain = new ProviderChain()
     if (model === 'groq' && this.groqProvider) {
       // Groq TTFT ≈0.1-0.3s and chunk gaps are ms-scale: tight idle window.
-      chain.addProvider(this.groqProvider, 3, 10000, 8000)
-    } else {
-      // Local Ollama is the default generator — high failure tolerance.
-      // Generous idle window: a cold model load can pause output for seconds.
-      chain.addProvider(
-        new OllamaProvider(this.ollamaService, 'qwen2.5-coder:1.5b'),
-        10,
-        10000,
-        30000
-      )
+      // A 5s connect window caps how long a hung Groq delays the Ollama
+      // fallback. Three failures open its circuit, so later questions skip
+      // straight to Ollama instead of paying a timeout each time.
+      chain.addProvider(this.groqProvider, 3, 5000, 8000)
     }
+    // Local Ollama is the default generator and the fallback when Groq is
+    // selected but fails before streaming. High failure tolerance; generous
+    // idle window because a cold model load can pause output for seconds.
+    chain.addProvider(
+      new OllamaProvider(this.ollamaService, 'qwen2.5-coder:1.5b'),
+      10,
+      10000,
+      30000
+    )
+    chain.on('fallback', (event: FallbackEvent) => {
+      console.warn(`[llm] ${event.from} failed (${event.reason}); falling back to ${event.to}`)
+      for (const listener of this.fallbackListeners) listener(event)
+    })
     return chain
   }
 
-  setGenerationModel(model: 'ollama' | 'groq'): void {
+  /** Called whenever a generation falls back to the next provider. */
+  onFallback(listener: (event: FallbackEvent) => void): void {
+    this.fallbackListeners.push(listener)
+  }
+
+  setGenerationModel(model: GenerationModel): void {
     if (model === 'groq' && !this.groqProvider) {
       console.warn('[llm] GROQ_API_KEY not set; staying on local Ollama')
       return
@@ -90,20 +77,15 @@ export class LlmOrchestrator {
     }
   }
 
-  getGenerationModel(): 'ollama' | 'groq' {
+  getGenerationModel(): GenerationModel {
     return this.generationModel
   }
 
   async initialize(): Promise<void> {
+    // Warm the Groq connection in parallel; a dead Ollama must not block it.
+    this.groqProvider?.healthCheck().catch(() => {})
     await this.ollamaService.start()
-    this.prewarmCloudProviders()
     console.log('Ollama ready, models preloaded')
-  }
-
-  private prewarmCloudProviders(): void {
-    for (const provider of this.cloudProviders) {
-      provider.healthCheck().catch(() => {})
-    }
   }
 
   /**

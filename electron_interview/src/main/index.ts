@@ -46,7 +46,7 @@ function loadDotEnv(): void {
     }
   }
   console.warn(
-    "[env] No .env found — cloud providers (Groq/Cerebras/...) will be unavailable",
+    "[env] No .env found — Groq will be unavailable; answers use local Ollama",
   );
 }
 
@@ -205,11 +205,6 @@ if (/keywords?\s*:/i.test(sttConfig.whisperInitialPrompt ?? "")) {
 const llmKeys = {
   groq: process.env.GROQ_API_KEY,
   groqModel: process.env.GROQ_MODEL,
-  cerebras: process.env.CEREBRAS_API_KEY,
-  sambanova: process.env.SAMBANOVA_API_KEY,
-  gemini: process.env.GEMINI_API_KEY,
-  nvidia: process.env.NVIDIA_API_KEY,
-  openrouter: process.env.OPENROUTER_API_KEY,
 };
 
 let mainWindow: BrowserWindow | null = null;

@@ -14,6 +14,8 @@ export const IPC = {
   ANSWER_DONE: 'answer:done',
   ANSWER_ERROR: 'answer:error',
   ANSWER_RESET: 'answer:reset',
+  // Selected model failed before streaming; answer came from the fallback
+  ANSWER_FALLBACK: 'answer:fallback',
 
   // Text (renderer → main)
   TEXT_PROCESS: 'text:process',

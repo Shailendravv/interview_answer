@@ -51,6 +51,7 @@ function App(): JSX.Element {
   );
   const [liveTranscript, setLiveTranscript] = useState("");
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [deviceRecoveredNotice, setDeviceRecoveredNotice] = useState(false);
   const [deviceSwitchWarning, setDeviceSwitchWarning] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -60,6 +61,7 @@ function App(): JSX.Element {
   const [projectsPayload, setProjectsPayload] =
     useState<ProjectListPayload>(EMPTY_PAYLOAD);
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstTokenSeenRef = useRef(false);
   const micFallbackRef = useRef(false);
   const startingRef = useRef(false);
@@ -222,6 +224,16 @@ function App(): JSX.Element {
       setIsListening(true);
       setStatus("idle");
     });
+    api.on("answer:fallback", (data) => {
+      // The selected model stays selected; this answer just came from the
+      // fallback. Groq is retried on later questions once its circuit allows.
+      const payload = data as { from?: string; to?: string };
+      setFallbackNotice(
+        `${payload.from ?? "Selected model"} unavailable — answered with ${payload.to ?? "fallback"}.`,
+      );
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = setTimeout(() => setFallbackNotice(null), 8000);
+    });
     api.on("answer:error", (err) => {
       console.error("Generation error:", err);
       setGenerationError(String(err));
@@ -297,12 +309,14 @@ function App(): JSX.Element {
       window.removeEventListener("audio:silent", onAudioSilent);
       window.removeEventListener("audio:source", onAudioSource);
       window.removeEventListener("audio:track-lost", onTrackLost);
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       (
         [
           "transcript:interim",
           "transcript:final",
           "answer:token",
           "answer:reset",
+          "answer:fallback",
           "answer:done",
           "answer:error",
           "status:update",
@@ -604,6 +618,19 @@ function App(): JSX.Element {
                 {deviceRecoveredNotice && (
                   <div className="flex items-center gap-2 bg-emerald-500/10 backdrop-blur-md text-emerald-300 text-xs px-3 py-2 rounded-lg border border-emerald-500/30">
                     <span>Audio device changed. Recovered.</span>
+                  </div>
+                )}
+
+                {fallbackNotice && (
+                  <div className="flex items-center gap-2 bg-amber-500/10 backdrop-blur-md text-amber-300 text-xs px-3 py-2 rounded-lg border border-amber-500/30">
+                    <span>{fallbackNotice}</span>
+                    <button
+                      onClick={() => setFallbackNotice(null)}
+                      aria-label="Dismiss"
+                      className="ml-auto text-amber-400 hover:text-amber-200 font-medium"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )}
 

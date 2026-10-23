@@ -15,16 +15,23 @@ const STATE_LABELS: Record<CircuitState, string> = {
   [CircuitState.HalfOpen]: 'half-open'
 }
 
-/** Combine only EXTERNAL cancel signals; stall protection lives in providers. */
-function combineExternal(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
-  const controller = new AbortController()
-  if (a?.aborted) controller.abort(a.reason)
-  else a?.addEventListener('abort', () => controller.abort(a.reason), { once: true })
-  if (b.aborted) controller.abort(b.reason)
-  else b.addEventListener('abort', () => controller.abort(b.reason), { once: true })
-  return controller.signal
+export interface FallbackEvent {
+  from: string
+  to: string
+  reason: string
 }
 
+function isAbort(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'AbortError' || err.cause === 'aborted')
+}
+
+/**
+ * Ordered providers with sequential fallback: the first provider whose circuit
+ * is closed is tried; if it fails BEFORE yielding a token, the next one takes
+ * over and a 'fallback' event is emitted. A failure after the first token is
+ * surfaced as-is -- splicing a second model's answer onto a half-streamed one
+ * would produce a garbled reply.
+ */
 export class ProviderChain extends LlmProvider {
   readonly name = 'provider-chain'
   private providers: ProviderEntry[] = []
@@ -44,32 +51,43 @@ export class ProviderChain extends LlmProvider {
   }
 
   async *generate(req: GenerationRequest): AsyncGenerator<string, GenerationResponse, void> {
-    let lastError: Error | null = null
+    // An open circuit (repeated recent failures) skips that provider outright,
+    // so an unavailable primary doesn't cost a timeout on every question.
     const available = this.providers.filter((e) => !e.circuitBreaker.isOpen())
 
     if (available.length === 0) {
       throw new Error('All providers in chain are open')
     }
 
-    if (available.length === 1) {
-      const entry = available[0]
+    let lastError: Error | null = null
+    for (let i = 0; i < available.length; i++) {
+      const entry = available[i]
+      const state = { yielded: false }
       try {
-        return yield* this.runSingle(entry, req)
+        return yield* this.runSingle(entry, req, state)
       } catch (err) {
-        if (err instanceof Error && (err.name === 'AbortError' || err.cause === 'aborted')) {
-          throw err
+        if (isAbort(err)) throw err
+        const error = err instanceof Error ? err : new Error(String(err))
+        // Mid-stream failure: the user already sees part of this answer.
+        if (state.yielded) throw error
+        lastError = error
+        const next = available[i + 1]
+        if (next) {
+          this.emit('fallback', {
+            from: entry.provider.name,
+            to: next.provider.name,
+            reason: describeError(error)
+          } satisfies FallbackEvent)
         }
-        throw err instanceof Error ? err : new Error(String(err))
       }
     }
-
-    const result = yield* this.runParallel(available, req)
-    return result
+    throw lastError ?? new Error('All providers failed')
   }
 
   private async *runSingle(
     entry: ProviderEntry,
-    req: GenerationRequest
+    req: GenerationRequest,
+    state: { yielded: boolean }
   ): AsyncGenerator<string, GenerationResponse, void> {
     // Connect/idle windows ride on the request; each provider enforces them
     // around its own transport (a total-duration cap here would truncate
@@ -87,80 +105,15 @@ export class ProviderChain extends LlmProvider {
           return { text: fullText, provider: entry.provider.name, model: req.model }
         }
         fullText += token
+        state.yielded = true
         yield token
       }
       entry.circuitBreaker.recordSuccess()
       return { text: fullText, provider: entry.provider.name, model: req.model }
     } catch (err) {
-      if (err instanceof Error && (err.name === 'AbortError' || err.cause === 'aborted')) {
-        throw err
-      }
+      if (isAbort(err)) throw err
       entry.circuitBreaker.recordFailure()
       this.emit('warning', `${entry.provider.name} failed: ${describeError(err)}`)
-      throw err instanceof Error ? err : new Error(String(err))
-    }
-  }
-
-  private async *runParallel(
-    providers: ProviderEntry[],
-    req: GenerationRequest
-  ): AsyncGenerator<string, GenerationResponse, void> {
-    const controllers = providers.map(() => new AbortController())
-
-    const runners = providers.map((entry, idx) => ({
-      entry,
-      controller: controllers[idx],
-      iterator: entry.provider.generate({
-        ...req,
-        signal: combineExternal(req.signal, controllers[idx].signal),
-        timeouts: { connectMs: entry.connectMs, idleMs: entry.idleMs }
-      })[Symbol.asyncIterator]()
-    }))
-
-    const firstTokenPromises = runners.map((r, idx) =>
-      r.iterator.next().then((res) => ({ idx, res }))
-    )
-
-    let firstResult: { idx: number; res: IteratorResult<string, GenerationResponse> }
-    try {
-      firstResult = await Promise.race(firstTokenPromises)
-    } catch {
-      for (const c of controllers) c.abort()
-      throw new Error('All providers failed before producing a token')
-    }
-
-    const winnerIdx = firstResult.idx
-
-    for (let i = 0; i < runners.length; i++) {
-      if (i !== winnerIdx) controllers[i].abort()
-    }
-
-    const winner = runners[winnerIdx]
-    let fullText = ''
-
-    try {
-      if (!firstResult.res.done) {
-        const token = firstResult.res.value as string
-        fullText += token
-        yield token
-      }
-
-      while (true) {
-        const { done, value } = await winner.iterator.next()
-        if (done) {
-          const result = value as GenerationResponse
-          winner.entry.circuitBreaker.recordSuccess()
-          return result
-        }
-        fullText += value
-        yield value
-      }
-    } catch (err) {
-      if (err instanceof Error && (err.name === 'AbortError' || err.cause === 'aborted')) {
-        throw err
-      }
-      winner.entry.circuitBreaker.recordFailure()
-      this.emit('warning', `${winner.entry.provider.name} failed: ${describeError(err)}`)
       throw err instanceof Error ? err : new Error(String(err))
     }
   }

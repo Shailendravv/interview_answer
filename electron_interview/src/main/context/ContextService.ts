@@ -5,7 +5,6 @@ const MAX_PROMPT_TOKENS = 2500
 const TOKENS_PER_CHAR_PROSE = 0.25
 const TOKENS_PER_CHAR_CODE = 0.5
 const RECENT_PAIRS = 3
-const MAX_HISTORY_ANSWER_CHARS = 400
 // Older history is summarised as the list of questions already asked, built
 // here instead of by the local model. The 1.5B summariser returned chat
 // replies ("Great! I'm ready to help with your questions."), a lone "```", or
@@ -85,8 +84,10 @@ export class ContextService {
     let tokenCount = this.estimateTokens(questionTurn.content) + this.estimateTokens(systemExtra)
 
     // Fit recent pairs into the remaining budget as real alternating turns,
-    // trimming oldest first. Truncate past answers so a long answer cannot
-    // dominate or be echoed back verbatim.
+    // trimming oldest first. Past answers are kept whole: cut to 400
+    // characters with "…", they taught the local model to stop its own
+    // answers at ~401 characters with "…" (4-5/20 follow-up answers in a
+    // replayed session; 0/20 with whole answers, +140 ms median TTFT).
     if (this.recentPairs.length > 0) {
       const pairs = [...this.recentPairs]
       while (pairs.length > 0) {
@@ -94,13 +95,13 @@ export class ContextService {
           (sum, p) =>
             sum +
             this.estimateTokens(p.question) +
-            this.estimateTokens(this.truncateAnswer(p.answer)),
+            this.estimateTokens(p.answer),
           0
         )
         if (tokenCount + pairsTokens <= MAX_PROMPT_TOKENS) {
           const historyTurns: PromptTurn[] = pairs.flatMap((p) => [
             { role: 'user', content: p.question },
-            { role: 'assistant', content: this.truncateAnswer(p.answer) }
+            { role: 'assistant', content: p.answer }
           ])
           turns = [...historyTurns, questionTurn]
           tokenCount += pairsTokens
@@ -115,11 +116,6 @@ export class ContextService {
       turns.reduce((sum, t) => sum + this.estimateTokens(t.content), 0)
 
     return { systemExtra, turns, tokenCount: fullTokenCount }
-  }
-
-  private truncateAnswer(answer: string): string {
-    if (answer.length <= MAX_HISTORY_ANSWER_CHARS) return answer
-    return `${answer.slice(0, MAX_HISTORY_ANSWER_CHARS)}…`
   }
 
   private estimateTokens(text: string): number {

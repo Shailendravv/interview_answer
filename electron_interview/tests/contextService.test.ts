@@ -49,14 +49,30 @@ describe('ContextService.buildPrompt', () => {
     expect(built.tokenCount).toBeLessThanOrEqual(2500)
   })
 
-  it('stays within the token budget even with a very long answer', async () => {
+  it('keeps past answers whole, never cut with an ellipsis the model would imitate', async () => {
+    const ctx = new ContextService(makeDb())
+    await ctx.startNewInterview('test')
+    const answer = '## Answer\n' + 'Node.js runs JavaScript on the server. '.repeat(30)
+    await ctx.addInteraction('What is Node.js?', answer)
+
+    const built = await ctx.buildPrompt('What is an AI agent?', [])
+    expect(built.turns[1].content).toBe(answer)
+    expect(built.turns[1].content.endsWith('…')).toBe(false)
+  })
+
+  it('stays within the token budget by dropping the oldest pairs that do not fit', async () => {
     const ctx = new ContextService(makeDb())
     await ctx.startNewInterview('test')
 
-    await ctx.addInteraction('A short question?', 'y'.repeat(5000))
+    await ctx.addInteraction('An old question?', 'y'.repeat(12000))
+    await ctx.addInteraction('A recent question?', 'Short answer.')
 
     const built = await ctx.buildPrompt('Next question?', [])
-    expect(built.turns[1].content.length).toBeLessThanOrEqual(400 + 1)
+    expect(built.turns.map((t) => t.content)).toEqual([
+      'A recent question?',
+      'Short answer.',
+      expect.stringContaining('Next question?')
+    ])
     expect(built.tokenCount).toBeLessThanOrEqual(2500)
   })
 

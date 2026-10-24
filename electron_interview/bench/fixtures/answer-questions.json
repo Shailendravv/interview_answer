@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "notes": "Fixed question set for answer-quality baselines. Category is whatever production routing assigns (recorded per run); checks use that category's mandated headings. Project questions are skipped if their project id is missing from projects.json.",
+  "questions": [
+    { "id": "q01", "text": "What is the difference between a process and a thread?", "pinned": null },
+    { "id": "q02", "text": "Explain the event loop in Node.js.", "pinned": null },
+    { "id": "q03", "text": "What is a closure in JavaScript?", "pinned": null },
+    { "id": "q04", "text": "What is the CAP theorem?", "pinned": null },
+    { "id": "q05", "text": "What is the difference between SQL and NoSQL databases?", "pinned": null },
+    { "id": "q06", "text": "Implement a function to reverse a linked list.", "pinned": null },
+    { "id": "q07", "text": "Write code to find the longest palindromic substring.", "pinned": null },
+    { "id": "q08", "text": "How would you debug a memory leak in a Node.js service?", "pinned": null },
+    { "id": "q09", "text": "Design a URL shortener like bitly.", "pinned": null },
+    { "id": "q10", "text": "How would you design a rate limiter for a public API?", "pinned": null },
+    { "id": "q11", "text": "Tell me about yourself.", "pinned": null },
+    { "id": "q12", "text": "Tell me about a time you handled a conflict in your team.", "pinned": null },
+    { "id": "q13", "text": "What is your biggest weakness?", "pinned": null },
+    { "id": "q14", "text": "Explain the architecture of your billing validation and automation platform.", "pinned": null, "project": "billing-automation" },
+    { "id": "q15", "text": "How did you use PubMed in your biomedical research project?", "pinned": null, "project": "biomedical-research" },
+    { "id": "q16", "text": "What was your role in this project?", "pinned": "billing-automation", "project": "billing-automation" },
+    { "id": "q17", "text": "What challenges did you face in this project?", "pinned": "llm-playground", "project": "llm-playground" },
+    { "id": "q18", "text": "Tell me about your project.", "pinned": null, "expectClarify": true },
+    { "id": "q19", "text": "React mein useEffect kaise kaam karta hai?", "pinned": null }
+  ],
+  "session": {
+    "notes": "One continuous interview: exercises history, follow-up resolution, and background summarization (which starts once stored history exceeds ~2000 estimated tokens). gapMs simulates the candidate speaking their answer.",
+    "gapMs": 8000,
+    "turns": [
+      { "text": "What is a closure in JavaScript?" },
+      { "text": "Can you give me a practical example of it?", "expectMentions": ["closure"] },
+      { "text": "What is the event loop in Node.js?" },
+      { "text": "How is it different in the browser?", "expectMentions": ["event loop"] },
+      { "text": "Explain this project's architecture.", "pinned": "billing-automation", "project": "billing-automation" },
+      { "text": "What was the hardest part of it?", "pinned": "billing-automation", "project": "billing-automation" },
+      { "text": "What is the CAP theorem?", "pinned": "billing-automation" },
+      { "text": "Which one would you pick for a banking system?", "pinned": "billing-automation", "expectMentions": ["consisten"] },
+      { "text": "What is Kubernetes used for?", "pinned": "billing-automation" },
+      { "text": "How does it handle scaling?", "pinned": "billing-automation", "expectMentions": ["pod", "replica", "autoscal", "kubernetes"] }
+    ]
+  }
+}

@@ -14,7 +14,7 @@ export interface SegmentMeta {
 }
 
 interface AudioWorkerResponse {
-  type: 'segment' | 'ready' | 'error' | 'speech-start'
+  type: 'segment' | 'ready' | 'error' | 'speech-start' | 'activity'
   data?: ArrayBuffer
   meta?: SegmentMeta
   error?: string
@@ -24,6 +24,10 @@ const vad = new VADProcessor()
 
 vad.setOnSpeechStart(() => {
   parentPort?.postMessage({ type: 'speech-start' } satisfies AudioWorkerResponse)
+})
+
+vad.setOnActivity(() => {
+  parentPort?.postMessage({ type: 'activity' } satisfies AudioWorkerResponse)
 })
 
 function postSegments(segments: VADSegment[]): void {

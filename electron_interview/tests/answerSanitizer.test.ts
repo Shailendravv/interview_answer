@@ -137,3 +137,30 @@ describe('AnswerSanitizer', () => {
     expect(sanitizer.push('The answer.\n')).toEqual(['The answer.\n'])
   })
 })
+
+describe('AnswerSanitizer skipLeadingLine (prefilled heading)', () => {
+  const run = (tokens: string[]): string => {
+    const s = new AnswerSanitizer({ refinedQuery: 'q', skipLeadingLine: '## Answer\n' })
+    const out: string[] = []
+    for (const t of tokens) out.push(...s.push(t))
+    out.push(...s.flush())
+    return out.join('')
+  }
+
+  it('drops a repeated prefilled heading even when it arrives in pieces', () => {
+    expect(run(['## ', 'Ans', 'wer\n', 'Body text\n'])).toBe('Body text\n')
+  })
+
+  it('keeps a first line that only starts like the heading', () => {
+    expect(run(['## Answering ', 'this\n', 'x\n'])).toBe('## Answering this\nx\n')
+  })
+
+  it('only considers the first non-blank line', () => {
+    expect(run(['Intro\n', '## Answer\n', 'x\n'])).toBe('Intro\n## Answer\nx\n')
+  })
+
+  it('streams ordinary first lines without waiting for the newline', () => {
+    const s = new AnswerSanitizer({ refinedQuery: 'q', skipLeadingLine: '## Answer' })
+    expect(s.push('A process owns')).toEqual(['A process owns'])
+  })
+})

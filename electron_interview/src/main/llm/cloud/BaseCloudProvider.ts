@@ -1,5 +1,6 @@
 import { LlmProvider, GenerationRequest, GenerationResponse } from '../LlmProvider'
 import { createIdleAbortSignal } from '../idleSignal'
+import { RateLimitError, parseRetryAfter } from '../errors'
 
 const DEFAULT_CONNECT_MS = 10000
 const DEFAULT_IDLE_MS = 8000
@@ -102,6 +103,13 @@ export abstract class BaseCloudProvider extends LlmProvider {
     if (!response.ok) {
       const errText = await response.text()
       idle.dispose()
+      if (response.status === 429) {
+        const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'))
+        throw new RateLimitError(
+          `${this.config.name} rate-limited (429${retryAfterMs !== undefined ? `, retry in ${Math.ceil(retryAfterMs / 1000)}s` : ''}): ${errText.slice(0, 300)}`,
+          retryAfterMs
+        )
+      }
       throw new Error(`${this.config.name} returned ${response.status}: ${errText}`)
     }
 

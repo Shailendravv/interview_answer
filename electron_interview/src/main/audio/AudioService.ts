@@ -35,12 +35,20 @@ const DEFAULT_CONTINUATION_GRACE_MS = 900
 const MAX_JOINED_BYTES = 250 * 1024
 // Bound the hold so a long monologue cannot defer an answer indefinitely.
 const MAX_CONTINUATION_SEGMENTS = 4
+// The VAD confirms resumed speech only after minSpeechMs (96ms) of loud
+// frames, plus up to one capture chunk (~85ms) and a soft onset ("a process
+// ..."), so a speaker resuming after a 600-800ms pause could lose the race
+// against the commit timer: on exact synthetic pauses, 3 of 4 questions with an
+// 800ms pause were answered as two fragments despite the 900ms grace. When the
+// first loud frame of a possible onset arrives while a commit is pending, the
+// commit waits this long (once per utterance) for speech-start to confirm it.
+// Silence after a finished question never triggers it, so latency is unchanged.
+const ACTIVITY_HOLD_MS = 300
 
 export class AudioService {
   private isCapturing = false
   private window: BrowserWindow | null = null
   private worker: Worker | null = null
-  private segments: Buffer[] = []
   private workerReady = false
   private stt: STTEngine
   private sentenceDetector: SentenceDetector
@@ -52,6 +60,11 @@ export class AudioService {
   private continuationCount = 0
   private continuationTimer: ReturnType<typeof setTimeout> | null = null
   private commitTimer: ReturnType<typeof setTimeout> | null = null
+  /** Wall-clock time the pending commit is due (valid while commitTimer is set). */
+  private commitDueAt = 0
+  /** Last first-loud-frame hint from the VAD (a possible speech onset). */
+  private lastActivityAt = 0
+  private activityHoldUsed = false
   /** Wall-clock estimate of when the speaker actually stopped talking. */
   private lastEndOfSpeechAt = 0
   /** Audio of the utterance in progress, across continuation segments. */
@@ -128,7 +141,6 @@ export class AudioService {
       console.warn('[audio] Failed to reset previous capture state; continuing.', err)
     }
 
-    this.segments = []
     this.isCapturing = true
     this.workerReady = false
     this.sentenceDetector.reset()
@@ -225,6 +237,15 @@ export class AudioService {
       return
     }
 
+    if (msg.type === 'activity') {
+      this.lastActivityAt = Date.now()
+      if (this.commitTimer && !this.activityHoldUsed) {
+        this.activityHoldUsed = true
+        this.scheduleCommit(Math.max(this.commitDueAt - Date.now(), ACTIVITY_HOLD_MS))
+      }
+      return
+    }
+
     if (msg.type === 'speech-start') {
       this.speechInProgress = true
       // The speaker resumed inside the grace window, so a transcript waiting to
@@ -243,6 +264,8 @@ export class AudioService {
       // happens mid-sentence with speech still running.
       if (msg.meta?.reason === 'silence') this.speechInProgress = false
       this.lastEndOfSpeechAt = Date.now() - (msg.meta?.trailingSilenceMs ?? 0)
+      // A new pause starts: it gets its own onset-hint hold.
+      this.activityHoldUsed = false
 
       // The VAD reports how much trailing silence it actually included, so T0
       // (end-of-speech) is measured rather than estimated -- and it differs by
@@ -251,7 +274,6 @@ export class AudioService {
       latencyTracer.beginSegment(now - (msg.meta?.trailingSilenceMs ?? 0), now)
 
       const buf = Buffer.from(msg.data)
-      this.segments.push(buf)
       this.feedSegment(buf)
       return
     }
@@ -354,18 +376,31 @@ export class AudioService {
     // VAD hangover, and whisper's round-trip is shorter than that pause, so
     // "no speech yet" at this moment proves nothing. Wait out the rest of the
     // grace window measured from end-of-speech, not from now.
-    const waited = Date.now() - this.lastEndOfSpeechAt
-    const remaining = this.continuationGraceMs - waited
+    const now = Date.now()
+    const waited = now - this.lastEndOfSpeechAt
+    let remaining = this.continuationGraceMs - waited
+    // An onset hint already arrived since the speaker stopped: give
+    // speech-start the chance to confirm it before committing a fragment.
+    if (!graceExhausted && !this.activityHoldUsed && this.lastActivityAt > this.lastEndOfSpeechAt) {
+      this.activityHoldUsed = true
+      remaining = Math.max(remaining, this.lastActivityAt + ACTIVITY_HOLD_MS - now)
+    }
     if (graceExhausted || remaining <= 0) {
       this.commitUtterance(merged)
       return
     }
 
     if (this.debug) console.log(`[stt] holding ${remaining}ms for a possible continuation`)
+    this.scheduleCommit(remaining)
+  }
+
+  private scheduleCommit(delayMs: number): void {
+    this.clearCommitTimer()
+    this.commitDueAt = Date.now() + delayMs
     this.commitTimer = setTimeout(() => {
       this.commitTimer = null
       if (this.pendingUtterance) this.commitUtterance(this.pendingUtterance)
-    }, remaining)
+    }, delayMs)
   }
 
   private clearCommitTimer(): void {
@@ -376,6 +411,7 @@ export class AudioService {
   }
 
   private commitUtterance(text: string): void {
+    this.activityHoldUsed = false
     this.utteranceAudio = []
     this.awaitingJoinedTranscript = false
     this.clearCommitTimer()
@@ -415,6 +451,5 @@ export class AudioService {
     this.worker?.terminate()
     this.worker = null
     this.stt?.stop()
-    this.segments = []
   }
 }

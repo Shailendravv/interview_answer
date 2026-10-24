@@ -36,6 +36,11 @@ Thumbs.db
 # Test coverage
 coverage/
 
+# Evaluation harness: run output, generated audio, private recordings
+/bench/results/
+/bench/audio/synthetic/
+/bench/audio/local/
+
 # Local-only documentation (never pushed)
 /docs/
 

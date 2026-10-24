@@ -1,10 +1,43 @@
 import { spawn, ChildProcess } from 'child_process'
 import { createIdleAbortSignal } from './idleSignal'
 
+/**
+ * Context window every request to a generation model uses. Ollama 0.30
+ * defaults to 32768, which loads qwen2.5-coder:1.5b at 2.1 GB of VRAM; 8192
+ * needs 1.36 GB (measured) and still fits the largest prompt seen in the
+ * bench/ answer suite (1,879 tokens) several times over. Every request to the
+ * same model must use the same value -- a different num_ctx forces a reload.
+ */
+export const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX) || 8192
+
+export interface OllamaGenerationOptions {
+  /** Max tokens to generate. Without it Ollama runs until the context fills. */
+  num_predict?: number
+  temperature?: number
+}
+
+/**
+ * A streaming response plus its stall watchdog. The watchdog must stay armed
+ * while the body is read -- the caller calls progress() per chunk and
+ * dispose() when done -- or a stalled stream would hang forever.
+ */
+export interface OllamaStream {
+  response: Response
+  progress: () => void
+  dispose: () => void
+}
+
 
 export interface OllamaModel {
   name: string
   loaded: boolean
+}
+
+function stripUndefined(options?: OllamaGenerationOptions): OllamaGenerationOptions {
+  const out: OllamaGenerationOptions = {}
+  if (options?.num_predict !== undefined) out.num_predict = options.num_predict
+  if (options?.temperature !== undefined) out.temperature = options.temperature
+  return out
 }
 
 export class OllamaService {
@@ -139,7 +172,8 @@ export class OllamaService {
         const res = await fetch(`${this.baseUrl}/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, prompt: 'Hello', stream: false, keep_alive: -1 }),
+          // Same num_ctx as real requests, or the first question reloads the model.
+          body: JSON.stringify({ model, prompt: 'Hello', stream: false, keep_alive: -1, options: { num_ctx: OLLAMA_NUM_CTX, num_predict: 1 } }),
           signal: AbortSignal.timeout(120000)
         })
 
@@ -170,9 +204,10 @@ export class OllamaService {
     messages: { role: string; content: string }[],
     stream = true,
     signal?: AbortSignal,
-    timeouts?: { connectMs: number; idleMs: number }
-  ): Promise<Response> {
-    return this.streamRequest(`${this.baseUrl}/api/chat`, { model, messages, stream }, signal, timeouts)
+    timeouts?: { connectMs: number; idleMs: number },
+    options?: OllamaGenerationOptions
+  ): Promise<OllamaStream> {
+    return this.streamRequest(`${this.baseUrl}/api/chat`, { model, messages, stream }, signal, timeouts, options)
   }
 
   async generate(
@@ -180,44 +215,52 @@ export class OllamaService {
     prompt: string,
     stream = true,
     signal?: AbortSignal,
-    timeouts?: { connectMs: number; idleMs: number }
-  ): Promise<Response> {
-    return this.streamRequest(`${this.baseUrl}/api/generate`, { model, prompt, stream }, signal, timeouts)
+    timeouts?: { connectMs: number; idleMs: number },
+    options?: OllamaGenerationOptions
+  ): Promise<OllamaStream> {
+    return this.streamRequest(`${this.baseUrl}/api/generate`, { model, prompt, stream }, signal, timeouts, options)
   }
 
   /**
    * Streams are bounded by connect/idle windows instead of a total-duration
    * timer: a long but steadily-producing answer must never be cut off, while
-   * a stalled server is dropped quickly.
+   * a stalled server is dropped quickly. The watchdog (and the caller's abort
+   * signal) stay attached until the caller disposes the returned stream.
    */
   private async streamRequest(
     url: string,
     payload: Record<string, unknown>,
     signal?: AbortSignal,
-    timeouts?: { connectMs: number; idleMs: number }
-  ): Promise<Response> {
+    timeouts?: { connectMs: number; idleMs: number },
+    options?: OllamaGenerationOptions
+  ): Promise<OllamaStream> {
     const connectMs = timeouts?.connectMs ?? 10000
     const idleMs = timeouts?.idleMs ?? 30000
     const idle = createIdleAbortSignal(connectMs, idleMs, signal)
+    const body = {
+      ...payload,
+      keep_alive: -1,
+      options: { num_ctx: OLLAMA_NUM_CTX, ...stripUndefined(options) }
+    }
 
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, keep_alive: -1 }),
+        body: JSON.stringify(body),
         signal: idle.signal
       })
       if (res.ok) {
         this.models.set(String(payload.model), true)
       }
-      return res
+      idle.progress() // headers arrived -- switch to the idle window
+      return { response: res, progress: idle.progress, dispose: idle.dispose }
     } catch (err) {
+      idle.dispose()
       if (err instanceof DOMException && err.name === 'TimeoutError') {
         throw new Error(`Ollama stream stalled at ${url} (${connectMs}/${idleMs}ms connect/idle)`)
       }
       throw err
-    } finally {
-      idle.dispose()
     }
   }
 

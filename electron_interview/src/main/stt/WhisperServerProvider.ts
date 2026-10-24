@@ -11,6 +11,8 @@ import { latencyTracer } from '../telemetry/LatencyTracer'
 const SERVER_THREADS = Math.max(2, Math.floor(cpus().length / 2))
 
 interface ServerConfig {
+  /** Engine name for logs/status, e.g. "whisper-server-cuda". */
+  name?: string
   modelPath: string
   binaryPath: string
   host?: string
@@ -19,13 +21,55 @@ interface ServerConfig {
   initialPrompt?: string
   noSpeechThreshold?: number
   inferenceTimeoutMs?: number
+  /**
+   * Transcribe a second of silence before reporting ready. GPU builds can
+   * start and pass /health yet abort on the first kernel (unsupported GPU
+   * generation, driver too old); this turns that into a start failure so the
+   * engine chain moves on before the first question instead of after three
+   * failed ones. It also warms the GPU kernels.
+   */
+  selfTest?: boolean
+  /**
+   * Vulkan builds: run the binary once (~0.25s, it exits on a missing model
+   * after listing devices) and pass `--device` for the first discrete GPU.
+   * ggml-vulkan keeps the driver's order, and on hybrid laptops that puts
+   * the integrated GPU first: measured 1.7s per question on Iris Xe against
+   * ~0.2s on the RTX 3050 next to it.
+   */
+  preferDiscreteGpu?: boolean
 }
+
+const DEVICE_PROBE_TIMEOUT_MS = 5000
+
+/**
+ * Index of the first discrete GPU in ggml-vulkan's device listing
+ * ("ggml_vulkan: 1 = NVIDIA ... | uma: 0 | ..."), or undefined when there is
+ * none and the default device should be kept.
+ */
+export function pickVulkanDevice(probeOutput: string): number | undefined {
+  for (const m of probeOutput.matchAll(/ggml_vulkan: (\d+) = .*?\| uma: (\d)/g)) {
+    if (m[2] === '0') return Number(m[1])
+  }
+  return undefined
+}
+
+const SELF_TEST_TIMEOUT_MS = 20000
 
 // ~8s of 16kHz mono PCM; whisper degrades on longer chunks, so never POST more.
 const MAX_CHUNK_BYTES = 256 * 1024
 
+// Longest measured inference on the CPU build is ~9s for a full 8s chunk
+// (bench/, 8-core laptop). 30s leaves >3x headroom for slower CPUs while a
+// hung server no longer blocks every following segment for a full minute.
+const DEFAULT_INFERENCE_TIMEOUT_MS = 30000
+
+// Windows STATUS_DLL_NOT_FOUND: the binary cannot load at all (e.g. a CUDA
+// build on a machine without the CUDA runtime). Respawning cannot fix that,
+// so fail fast and let the engine chain fall back.
+const DLL_NOT_FOUND_EXIT_CODES = new Set([0xc0000135, -1073741515])
+
 export class WhisperServerProvider extends BaseSTTEngine {
-  readonly name = 'whisper-server'
+  readonly name: string
 
   private process: ChildProcess | null = null
   private buffer: Buffer[] = []
@@ -43,13 +87,16 @@ export class WhisperServerProvider extends BaseSTTEngine {
   private healthController: AbortController | null = null
   private abortController: AbortController | null = null
   private startPromise: Promise<void> | null = null
+  /** Vulkan device chosen by the probe (preferDiscreteGpu); kept across respawns. */
+  private gpuDevice: number | undefined
 
   constructor(private config: ServerConfig) {
     super()
+    this.name = config.name ?? 'whisper-server'
     this.host = config.host || '127.0.0.1'
     this.port = config.port || 8080
     this.noSpeechThreshold = config.noSpeechThreshold ?? 0.6
-    this.inferenceTimeoutMs = config.inferenceTimeoutMs ?? 60000
+    this.inferenceTimeoutMs = config.inferenceTimeoutMs ?? DEFAULT_INFERENCE_TIMEOUT_MS
   }
 
   private get baseUrl(): string {
@@ -83,13 +130,68 @@ export class WhisperServerProvider extends BaseSTTEngine {
     this.tempDir = mkdtempSync(join(tmpdir(), 'whisper-server-'))
 
     try {
+      if (this.config.preferDiscreteGpu && this.gpuDevice === undefined) {
+        this.gpuDevice = await this.probeVulkanDevice()
+      }
       await this.spawnServer(3)
+      if (this.config.selfTest) await this.runSelfTest()
       this.emit('ready')
       this.emit('status', { engine: this.name, error: null })
     } catch (err) {
-      this.isRunning = false
-      this.emit('error', err instanceof Error ? err : new Error(String(err)))
+      // Reject so FallbackSTTEngine moves to the next engine. Emitting 'error'
+      // here only worked by accident: with no listener yet EventEmitter threw
+      // it, but on a restart the chain's listener swallowed it and a dead
+      // engine was kept as current.
+      this.stop()
+      throw err instanceof Error ? err : new Error(String(err))
     }
+  }
+
+  private async probeVulkanDevice(): Promise<number | undefined> {
+    const output = await new Promise<string>((resolve) => {
+      let out = ''
+      const missingModel = join(this.tempDir ?? tmpdir(), 'device-probe-no-model.bin')
+      const proc = spawn(this.config.binaryPath, ['-m', missingModel], { stdio: ['ignore', 'pipe', 'pipe'] })
+      const done = (): void => {
+        clearTimeout(timer)
+        resolve(out)
+      }
+      const timer = setTimeout(() => {
+        proc.kill()
+        done()
+      }, DEVICE_PROBE_TIMEOUT_MS)
+      proc.stdout?.on('data', (d: Buffer) => (out += d.toString()))
+      proc.stderr?.on('data', (d: Buffer) => (out += d.toString()))
+      proc.once('error', done)
+      proc.once('exit', done)
+    })
+    const devices = [...output.matchAll(/ggml_vulkan: (\d+) = ([^|]*?)\s*\|/g)].map((m) => `${m[1]}: ${m[2]}`)
+    const picked = pickVulkanDevice(output)
+    console.log(
+      `[${this.name}] Vulkan devices: ${devices.join('; ') || 'none listed'} -> ` +
+        (picked === undefined ? 'default device' : `device ${picked} (discrete)`)
+    )
+    return picked
+  }
+
+  private async runSelfTest(): Promise<void> {
+    const startedAt = Date.now()
+    const form = new FormData()
+    form.append('file', new Blob([this.pcmToWav(Buffer.alloc(32000))], { type: 'audio/wav' }), 'self-test.wav')
+    form.append('response_format', 'json')
+    let res: Response
+    try {
+      res = await fetch(`${this.baseUrl}/inference`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(SELF_TEST_TIMEOUT_MS)
+      })
+    } catch (err) {
+      throw new Error(`${this.name} self-test failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    if (!res.ok) throw new Error(`${this.name} self-test failed: HTTP ${res.status}`)
+    await res.body?.cancel()
+    console.log(`[${this.name}] self-test ok (${Date.now() - startedAt}ms)`)
   }
 
   private async isHealthy(): Promise<boolean> {
@@ -116,6 +218,7 @@ export class WhisperServerProvider extends BaseSTTEngine {
       '--host', this.host,
       '--port', String(this.port)
     ]
+    if (this.gpuDevice !== undefined) args.push('--device', String(this.gpuDevice))
 
     const proc = spawn(this.config.binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe']
@@ -137,12 +240,22 @@ export class WhisperServerProvider extends BaseSTTEngine {
     })
 
     const serverReady = new Promise<void>((resolve, reject) => {
+      const controller = new AbortController()
+      let exited = false
       proc.once('exit', (code) => {
         console.warn(`[whisper-server] exited with code ${code}`)
-        this.process = null
+        // Stop this process's health polling; a respawn polls for itself.
+        exited = true
+        controller.abort()
+        if (this.process === proc) this.process = null
 
         if (this.stopping) {
           reject(new Error('whisper-server stopped'))
+          return
+        }
+
+        if (code !== null && DLL_NOT_FOUND_EXIT_CODES.has(code)) {
+          reject(new Error(`${this.name} cannot load a required DLL (exit ${code}); not retrying`))
           return
         }
 
@@ -155,7 +268,6 @@ export class WhisperServerProvider extends BaseSTTEngine {
         }
       })
 
-      const controller = new AbortController()
       this.healthController = controller
       this.waitForHealth(30000, controller.signal)
         .then(() => {
@@ -167,9 +279,11 @@ export class WhisperServerProvider extends BaseSTTEngine {
           }
         })
         .catch((err) => {
+          // The exit handler owns the outcome once the process has exited.
+          if (exited) return
           // Health failed for THIS process — kill it so it can't linger on the port.
           proc.kill()
-          this.process = null
+          if (this.process === proc) this.process = null
           reject(err instanceof Error ? err : new Error(String(err)))
         })
     })

@@ -11,6 +11,9 @@ export class CircuitBreaker {
   private failureCount = 0
   private lastFailureTime = 0
   private backoffIndex = 0
+  // Set by openFor(): a hold the provider itself asked for (rate limit),
+  // independent of the failure count and backoff stages.
+  private holdUntil = 0
 
   constructor(
     public readonly providerName: string,
@@ -23,6 +26,7 @@ export class CircuitBreaker {
   }
 
   recordSuccess(): void {
+    this.holdUntil = 0
     this.failureCount = 0
     this.backoffIndex = 0
     this.state = CircuitState.Closed
@@ -37,7 +41,25 @@ export class CircuitBreaker {
     }
   }
 
+  /** Open for exactly `ms`, then half-open: one request probes the provider. */
+  openFor(ms: number): void {
+    this.state = CircuitState.Open
+    this.lastFailureTime = Date.now()
+    this.holdUntil = this.lastFailureTime + ms
+  }
+
+  /** Remaining time of an openFor() hold; 0 when not held. */
+  holdRemainingMs(): number {
+    return Math.max(0, this.holdUntil - Date.now())
+  }
+
   isOpen(): boolean {
+    if (this.holdUntil) {
+      if (Date.now() < this.holdUntil) return true
+      this.holdUntil = 0
+      this.state = CircuitState.HalfOpen
+      return false
+    }
     if (this.state === CircuitState.Open) {
       if (Date.now() - this.lastFailureTime >= this.currentCooldownMs) {
         this.state = CircuitState.HalfOpen
@@ -49,6 +71,7 @@ export class CircuitBreaker {
   }
 
   reset(): void {
+    this.holdUntil = 0
     this.state = CircuitState.Closed
     this.failureCount = 0
     this.lastFailureTime = 0

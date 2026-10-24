@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "notes": "Source text for synthetic TTS clips. References are exact by construction, but TTS speech is clean and unaccented-in-the-wild: these clips validate the pipeline and measure latency/segmentation. They are NOT an accuracy baseline for real interview audio.",
+  "voices": [
+    { "name": "Microsoft Heera", "accent": "en-IN", "speaker": "tts-heera" },
+    { "name": "Microsoft Ravi", "accent": "en-IN", "speaker": "tts-ravi" },
+    { "name": "Microsoft Zira", "accent": "en-US", "speaker": "tts-zira" }
+  ],
+  "questions": [
+    { "id": "q01", "text": "What is the difference between a process and a thread?", "terms": ["process", "thread"] },
+    { "id": "q02", "text": "Explain the event loop in Node.js.", "terms": ["event loop", "Node.js"] },
+    { "id": "q03", "text": "How would you design a rate limiter for a public API?", "terms": ["rate limiter", "API"] },
+    { "id": "q04", "text": "What are the four pillars of object oriented programming?", "terms": ["object oriented"] },
+    { "id": "q05", "text": "Tell me about a time you handled a conflict in your team.", "terms": ["conflict"] },
+    { "id": "q06", "text": "Implement a function to reverse a linked list.", "terms": ["linked list"] },
+    { "id": "q07", "text": "What is the CAP theorem?", "terms": ["CAP theorem"] },
+    { "id": "q08", "text": "How does the useEffect hook work in React?", "terms": ["useEffect", "React"] },
+    { "id": "q09", "text": "What is retrieval augmented generation and when would you use it?", "terms": ["retrieval augmented generation"] },
+    { "id": "q10", "text": "Explain the difference between SQL and NoSQL databases.", "terms": ["SQL", "NoSQL"] },
+    { "id": "q11", "text": "How do you handle errors in asynchronous JavaScript code?", "terms": ["asynchronous", "JavaScript"] },
+    { "id": "q12", "text": "What is Kubernetes used for?", "terms": ["Kubernetes"] },
+    { "id": "q13", "text": "What is the time complexity of binary search on an array of 1000 elements?", "terms": ["time complexity", "binary search", "1000"] }
+  ],
+  "paused": [
+    { "id": "pz1", "parts": ["What is the difference between", "a process and a thread?"], "terms": ["process", "thread"] },
+    { "id": "pz2", "parts": ["How would you design", "a rate limiter for a public API?"], "terms": ["rate limiter"] },
+    { "id": "pz3", "parts": ["Can you explain", "how garbage collection works in Java?"], "terms": ["garbage collection", "Java"] },
+    { "id": "pz4", "parts": ["Tell me about a project", "where you used Docker and Kubernetes."], "terms": ["Docker", "Kubernetes"] }
+  ],
+  "pausesMs": [600, 800, 1200],
+  "pausedVoice": "Microsoft Heera",
+  "sequences": [
+    { "id": "seq1", "questionIds": ["q01", "q07", "q12"], "gapMs": 2000, "voice": "Microsoft Ravi" },
+    { "id": "seq2", "questionIds": ["q02", "q06", "q10"], "gapMs": 2000, "voice": "Microsoft Heera" }
+  ],
+  "nonSpeech": [
+    { "id": "ns1", "kind": "digital-silence", "ms": 6000 },
+    { "id": "ns2", "kind": "white-noise", "dbfs": -50, "ms": 6000 },
+    { "id": "ns3", "kind": "white-noise", "dbfs": -30, "ms": 6000 }
+  ]
+}

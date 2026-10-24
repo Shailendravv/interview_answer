@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "notes": "DRAFT labels written by the assistant; verified=false until a human reviews them. expect.context is one of: none | clarify | project:<id>. Conceptual 'what is / explain X' questions are labelled general, following the stated intent in RouterService.detectCategory (template shape fit), not the keyword that happens to appear.",
+  "cases": [
+    { "id": "g01", "text": "What is the difference between a process and a thread?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual", "verified": false },
+    { "id": "g02", "text": "Explain the event loop in Node.js.", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual; coding template (Problem/Approach/Code) does not fit", "verified": false },
+    { "id": "g03", "text": "What is a closure in JavaScript?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual", "verified": false },
+    { "id": "g04", "text": "What are the four pillars of OOPS?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "explicit OOP conceptual rule in router", "verified": false },
+    { "id": "g05", "text": "What is the CAP theorem?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual; full system-design template does not fit a definition", "verified": false },
+    { "id": "g06", "text": "What is retrieval augmented generation and when would you use it?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual", "verified": false },
+    { "id": "g07", "text": "What is the difference between SQL and NoSQL databases?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual", "verified": false },
+    { "id": "g08", "text": "How does React's useEffect hook work?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual", "verified": false },
+    { "id": "g09", "text": "What is Kubernetes used for?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "conceptual", "verified": false },
+    { "id": "g10", "text": "What is an AI agent?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "'agent' is a keyword of agent-pulse but must not hijack a conceptual question (see RouterService comment)", "verified": false },
+
+    { "id": "c01", "text": "Implement a function to reverse a linked list.", "pinned": null, "expect": { "isQuestion": true, "category": "coding", "context": "none" }, "rationale": "implementation task", "verified": false },
+    { "id": "c02", "text": "Write code to find the longest palindromic substring.", "pinned": null, "expect": { "isQuestion": true, "category": "coding", "context": "none" }, "rationale": "implementation task", "verified": false },
+    { "id": "c03", "text": "Solve two sum in linear time.", "pinned": null, "expect": { "isQuestion": true, "category": "coding", "context": "none" }, "rationale": "algorithm problem", "verified": false },
+    { "id": "c04", "text": "How would you debug a memory leak in a Node.js service?", "pinned": null, "expect": { "isQuestion": true, "category": "coding", "context": "none" }, "rationale": "practical debugging", "verified": false },
+
+    { "id": "s01", "text": "Design a URL shortener like bitly.", "pinned": null, "expect": { "isQuestion": true, "category": "system_design", "context": "none" }, "rationale": "design task", "verified": false },
+    { "id": "s02", "text": "How would you design a rate limiter for a public API?", "pinned": null, "expect": { "isQuestion": true, "category": "system_design", "context": "none" }, "rationale": "design task", "verified": false },
+    { "id": "s03", "text": "How would you scale a chat application to millions of users?", "pinned": null, "expect": { "isQuestion": true, "category": "system_design", "context": "none" }, "rationale": "design task", "verified": false },
+
+    { "id": "b01", "text": "Tell me about yourself.", "pinned": null, "expect": { "isQuestion": true, "category": "behavioral", "context": "none" }, "rationale": "behavioral", "verified": false },
+    { "id": "b02", "text": "Tell me about a time you handled a conflict in your team.", "pinned": null, "expect": { "isQuestion": true, "category": "behavioral", "context": "none" }, "rationale": "behavioral", "verified": false },
+    { "id": "b03", "text": "What is your biggest weakness?", "pinned": null, "expect": { "isQuestion": true, "category": "behavioral", "context": "none" }, "rationale": "behavioral", "verified": false },
+    { "id": "b04", "text": "Why do you want to join our company?", "pinned": null, "expect": { "isQuestion": true, "category": "behavioral", "context": "none" }, "rationale": "behavioral", "verified": false },
+
+    { "id": "p01", "text": "Explain the architecture of your billing validation and automation platform.", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "project:billing-automation" }, "rationale": "names own project", "verified": false },
+    { "id": "p02", "text": "What challenges did you face in the sales intelligence platform?", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "project:sales-intelligence" }, "rationale": "names own project", "verified": false },
+    { "id": "p03", "text": "How did you use PubMed in your biomedical research project?", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "project:biomedical-research" }, "rationale": "names own project", "verified": false },
+    { "id": "p04", "text": "Tell me about the multi LLM comparison platform you built.", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "project:llm-playground" }, "rationale": "names own project", "verified": false },
+    { "id": "p05", "text": "Explain this project's architecture.", "pinned": "billing-automation", "expect": { "isQuestion": true, "category": "project_specific", "context": "project:billing-automation" }, "rationale": "pronominal reference to pinned project", "verified": false },
+    { "id": "p06", "text": "What was your role in it?", "pinned": "billing-automation", "expect": { "isQuestion": true, "category": "project_specific", "context": "project:billing-automation" }, "rationale": "pronominal reference to pinned project", "verified": false },
+    { "id": "p07", "text": "What is the difference between a process and a thread?", "pinned": "billing-automation", "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "pinned project must not leak into a generic question", "verified": false },
+    { "id": "p08", "text": "Tell me more.", "pinned": "billing-automation", "expect": { "isQuestion": true, "category": "project_specific", "context": "project:billing-automation" }, "rationale": "generic follow-up answers the pinned project (documented behaviour)", "verified": false },
+    { "id": "p09", "text": "How does the sales intelligence platform generate emails?", "pinned": "billing-automation", "expect": { "isQuestion": true, "category": "project_specific", "context": "project:sales-intelligence" }, "rationale": "confident mention of another project switches", "verified": false },
+    { "id": "p10", "text": "Explain your project architecture.", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "clarify" }, "rationale": "no project pinned -> clarify block, not an invented answer", "verified": false },
+    { "id": "p11", "text": "Tell me about your project.", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "clarify" }, "rationale": "no project pinned -> clarify", "verified": false },
+
+    { "id": "n01", "text": "Okay, great.", "pinned": null, "expect": { "isQuestion": false }, "rationale": "interviewer acknowledgement, nothing to answer", "verified": false },
+    { "id": "n02", "text": "Let's move on to the next topic.", "pinned": null, "expect": { "isQuestion": false }, "rationale": "transition", "verified": false },
+    { "id": "n03", "text": "Can you hear me?", "pinned": null, "expect": { "isQuestion": false }, "rationale": "meta question about the call, not interview content", "verified": false },
+    { "id": "n04", "text": "Thank you, that's all for today.", "pinned": null, "expect": { "isQuestion": false }, "rationale": "closing remark", "verified": false },
+    { "id": "n05", "text": "Hmm.", "pinned": null, "expect": { "isQuestion": false }, "rationale": "filler", "verified": false },
+
+    { "id": "h01", "text": "React mein useEffect kaise kaam karta hai?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "Hinglish conceptual question", "verified": false },
+    { "id": "h02", "text": "Apne billing automation project ka architecture explain karo.", "pinned": null, "expect": { "isQuestion": true, "category": "project_specific", "context": "project:billing-automation" }, "rationale": "Hinglish, names own project", "verified": false },
+    { "id": "h03", "text": "प्रोसेस और थ्रेड में क्या अंतर है?", "pinned": null, "expect": { "isQuestion": true, "category": "general", "context": "none" }, "rationale": "Hindi (Devanagari) conceptual question", "verified": false }
+  ],
+  "sequences": [
+    {
+      "id": "m01",
+      "notes": "Follow-up must carry the earlier turn in the prompt history.",
+      "turns": ["What is a closure in JavaScript?", "Can you give me a practical example of it?"],
+      "expectHistoryContains": "What is a closure in JavaScript"
+    },
+    {
+      "id": "m02",
+      "turns": ["What is the CAP theorem?", "Which one would you pick for a banking system?"],
+      "expectHistoryContains": "What is the CAP theorem"
+    }
+  ]
+}

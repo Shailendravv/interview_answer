@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.node.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "rootDir": "..",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["./**/*.ts", "../src/audio/**/*", "../src/main/**/*", "../src/shared/**/*"],
+  "exclude": ["./results/**"]
+}

@@ -1,6 +1,6 @@
 import { LlmProvider, GenerationRequest, GenerationResponse } from './LlmProvider'
 import { CircuitBreaker, CircuitState } from './CircuitBreaker'
-import { describeError } from './errors'
+import { describeError, RateLimitError } from './errors'
 
 export interface ProviderEntry {
   provider: LlmProvider
@@ -20,6 +20,10 @@ export interface FallbackEvent {
   to: string
   reason: string
 }
+
+// A Retry-After beyond this is still honoured, but re-probed hourly: a single
+// fast 429 per hour is cheap, and a bogus header must not park Groq for days.
+const MAX_RATE_LIMIT_HOLD_MS = 60 * 60 * 1000
 
 function isAbort(err: unknown): boolean {
   return err instanceof Error && (err.name === 'AbortError' || err.cause === 'aborted')
@@ -54,6 +58,25 @@ export class ProviderChain extends LlmProvider {
     // An open circuit (repeated recent failures) skips that provider outright,
     // so an unavailable primary doesn't cost a timeout on every question.
     const available = this.providers.filter((e) => !e.circuitBreaker.isOpen())
+
+    // A rate-limited primary is skipped silently by the filter above, but the
+    // user picked it: say which model is answering instead, every question
+    // until the hold ends (a breaker trip stays quiet, as before).
+    const first = available[0]
+    if (first) {
+      for (const entry of this.providers) {
+        if (entry === first) break
+        const holdMs = entry.circuitBreaker.holdRemainingMs()
+        if (holdMs > 0) {
+          this.emit('fallback', {
+            from: entry.provider.name,
+            to: first.provider.name,
+            reason: `rate-limited; retrying in ${Math.ceil(holdMs / 1000)}s`
+          } satisfies FallbackEvent)
+          break
+        }
+      }
+    }
 
     if (available.length === 0) {
       throw new Error('All providers in chain are open')
@@ -112,7 +135,11 @@ export class ProviderChain extends LlmProvider {
       return { text: fullText, provider: entry.provider.name, model: req.model }
     } catch (err) {
       if (isAbort(err)) throw err
-      entry.circuitBreaker.recordFailure()
+      if (err instanceof RateLimitError && err.retryAfterMs !== undefined) {
+        entry.circuitBreaker.openFor(Math.min(err.retryAfterMs, MAX_RATE_LIMIT_HOLD_MS))
+      } else {
+        entry.circuitBreaker.recordFailure()
+      }
       this.emit('warning', `${entry.provider.name} failed: ${describeError(err)}`)
       throw err instanceof Error ? err : new Error(String(err))
     }

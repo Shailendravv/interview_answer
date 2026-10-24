@@ -1,4 +1,5 @@
 import { existsSync } from 'fs'
+import { basename } from 'path'
 import { STTEngine } from '../../shared/stt/sttProvider'
 import { EventEmitter } from 'events'
 import { WhisperProvider } from './WhisperProvider'
@@ -11,9 +12,18 @@ export interface SttServiceConfig {
   whisperModelPath?: string
   whisperBinaryPath?: string
   whisperServerBinaryPath?: string
+  /** GPU (CUDA) build of whisper-server, tried before the CPU one when present. */
+  whisperCudaServerBinaryPath?: string
+  /** Vulkan build of whisper-server: any GPU with a Vulkan driver (NVIDIA, AMD, Intel). Tried after CUDA. */
+  whisperVulkanServerBinaryPath?: string
   whisperServerHost?: string
   whisperServerPort?: number
   whisperInitialPrompt?: string
+  /**
+   * Decode language passed to whisper ("en" default; "hi", "auto", ...). Only
+   * multilingual models can use anything but "en" -- a *.en model forces "en".
+   */
+  whisperLanguage?: string
   whisperNoSpeechThreshold?: number
   silenceTimeoutMs?: number
   /** Silence required to close a segment, in ms of audio (not frame counts). */
@@ -39,13 +49,23 @@ class NoopSTTEngine extends EventEmitter implements STTEngine {
   cancel(): void {}
 }
 
-class FallbackSTTEngine extends EventEmitter implements STTEngine {
+// A single failed request (a dropped connection, a 500) used to switch the
+// session permanently to the next engine -- typically whisper-cli, which
+// reloads the model on every segment. Only repeated failures in a short window
+// mean the engine is really gone; whisper-server respawns its own process.
+const ENGINE_ERROR_WINDOW_MS = 60000
+const ENGINE_MAX_ERRORS = 3
+
+export class FallbackSTTEngine extends EventEmitter implements STTEngine {
   readonly name: string
   private engines: STTEngine[] = []
   private currentIndex = 0
   private currentEngine: STTEngine | null = null
   private isActive = false
   private hasAdvanced = false
+  private recentErrors: number[] = []
+  /** Engines whose events are already forwarded, so a restart cannot duplicate them. */
+  private forwarded = new Set<STTEngine>()
 
   get currentEngineName(): string {
     return this.currentEngine?.name ?? 'none'
@@ -64,6 +84,7 @@ class FallbackSTTEngine extends EventEmitter implements STTEngine {
 
   private async tryStartEngine(): Promise<void> {
     this.hasAdvanced = false
+    this.recentErrors = []
     while (this.currentIndex < this.engines.length) {
       const engine = this.engines[this.currentIndex]
       try {
@@ -87,16 +108,33 @@ class FallbackSTTEngine extends EventEmitter implements STTEngine {
   }
 
   private forwardChildEvents(engine: STTEngine): void {
+    if (this.forwarded.has(engine)) return
+    this.forwarded.add(engine)
     engine.on('transcript', (text, isFinal) => {
+      if (engine !== this.currentEngine) return
       this.emit('transcript', text, isFinal)
     })
     engine.on('ready', () => {
+      if (engine !== this.currentEngine) return
       this.emit('ready')
     })
     engine.on('error', (err) => {
-      if (this.hasAdvanced) return
+      if (engine !== this.currentEngine || this.hasAdvanced) return
+      const now = Date.now()
+      this.recentErrors = this.recentErrors.filter((t) => now - t < ENGINE_ERROR_WINDOW_MS)
+      this.recentErrors.push(now)
+      if (this.recentErrors.length < ENGINE_MAX_ERRORS) {
+        console.warn(
+          `[STT] Engine "${engine.name}" error: ${err.message} ` +
+            `(${this.recentErrors.length}/${ENGINE_MAX_ERRORS} in ${ENGINE_ERROR_WINDOW_MS / 1000}s; staying on it)`
+        )
+        return
+      }
       this.hasAdvanced = true
       console.warn(`[STT] Engine "${engine.name}" error: ${err.message}. Advancing to next...`)
+      // Release the abandoned engine (its process, port and temp dir).
+      engine.stop()
+      this.currentEngine = null
       this.currentIndex++
       this.tryStartEngine()
     })
@@ -149,21 +187,73 @@ function binaryAvailable(binaryPath: string, name: string): boolean {
   return true
 }
 
+/** English-only ggml models (ggml-small.en.bin, ggml-base.en-q5_1.bin, ...). */
+function isEnglishOnlyModel(modelPath: string): boolean {
+  return /\.en([-_.]|$)/i.test(basename(modelPath).replace(/\.bin$/i, ''))
+}
+
+export function resolveSttLanguage(config: SttServiceConfig): string {
+  const requested = (config.whisperLanguage || 'en').trim().toLowerCase()
+  if (requested !== 'en' && config.whisperModelPath && isEnglishOnlyModel(config.whisperModelPath)) {
+    console.warn(
+      `[STT] STT_LANGUAGE=${requested} needs a multilingual model, but ` +
+        `"${basename(config.whisperModelPath)}" is English-only; using "en".`
+    )
+    return 'en'
+  }
+  return requested
+}
+
 export function createSttService(config: SttServiceConfig): STTEngine {
   const engines: STTEngine[] = []
   const modelPath = modelAvailable(config)
+  const language = resolveSttLanguage(config)
 
-  // 1. whisper-server (persistent HTTP, fastest)
+  const serverOptions = {
+    host: config.whisperServerHost || '127.0.0.1',
+    port: config.whisperServerPort || 8080,
+    language,
+    initialPrompt: config.whisperInitialPrompt,
+    noSpeechThreshold: config.whisperNoSpeechThreshold
+  }
+
+  // 0. whisper-server CUDA build (measured ~38x faster than the CPU build on an
+  //    RTX 3050). Needs the NVIDIA driver and the CUDA runtime it was built
+  //    against; if either is missing it fails to start and the CPU build runs.
+  if (modelPath && config.whisperCudaServerBinaryPath && binaryAvailable(config.whisperCudaServerBinaryPath, 'whisper-server-cuda')) {
+    engines.push(
+      new WhisperServerProvider({
+        name: 'whisper-server-cuda',
+        modelPath,
+        binaryPath: config.whisperCudaServerBinaryPath,
+        ...serverOptions,
+        selfTest: true
+      })
+    )
+  }
+
+  // 0b. whisper-server Vulkan build: needs only the GPU driver, so it is the
+  //     GPU path on machines without the CUDA toolkit, and on AMD/Intel GPUs.
+  if (modelPath && config.whisperVulkanServerBinaryPath && binaryAvailable(config.whisperVulkanServerBinaryPath, 'whisper-server-vulkan')) {
+    engines.push(
+      new WhisperServerProvider({
+        name: 'whisper-server-vulkan',
+        modelPath,
+        binaryPath: config.whisperVulkanServerBinaryPath,
+        ...serverOptions,
+        selfTest: true,
+        preferDiscreteGpu: true
+      })
+    )
+  }
+
+  // 1. whisper-server (persistent HTTP, fastest on CPU)
   if (modelPath && binaryAvailable(config.whisperServerBinaryPath || '', 'whisper-server')) {
     engines.push(
       new WhisperServerProvider({
         modelPath,
         binaryPath: config.whisperServerBinaryPath || '',
-        host: config.whisperServerHost || '127.0.0.1',
-        port: config.whisperServerPort || 8080,
-        language: 'en',
-        initialPrompt: config.whisperInitialPrompt,
-        noSpeechThreshold: config.whisperNoSpeechThreshold
+        ...serverOptions
       })
     )
   }
@@ -174,7 +264,7 @@ export function createSttService(config: SttServiceConfig): STTEngine {
       new WhisperProvider({
         modelPath,
         binaryPath: config.whisperBinaryPath || 'whisper-cli',
-        language: 'en',
+        language,
         initialPrompt: config.whisperInitialPrompt
       })
     )

@@ -1,5 +1,5 @@
 import { LlmProvider, GenerationRequest, GenerationResponse } from './LlmProvider'
-import { OllamaService } from './OllamaService'
+import { OllamaService, OllamaStream } from './OllamaService'
 
 export class OllamaProvider extends LlmProvider {
   readonly name = 'ollama'
@@ -18,14 +18,20 @@ export class OllamaProvider extends LlmProvider {
 
     const prompt = req.messages.map((m) => `${m.role}: ${m.content}`).join('\n')
 
-    let response: Response
+    // maxTokens/temperature used to be dropped here, so Ollama ran with its
+    // own defaults (temperature 0.8, no length cap): one measured answer ran
+    // 35,800 tokens / 7 minutes while every following question waited.
+    const options = { num_predict: req.maxTokens, temperature: req.temperature }
+
+    let stream: OllamaStream
     try {
-      response = multiTurn
-        ? await this.ollama.chat(this.modelName, req.messages, true, req.signal, req.timeouts)
-        : await this.ollama.generate(this.modelName, prompt, true, req.signal, req.timeouts)
+      stream = multiTurn
+        ? await this.ollama.chat(this.modelName, req.messages, true, req.signal, req.timeouts, options)
+        : await this.ollama.generate(this.modelName, prompt, true, req.signal, req.timeouts, options)
     } catch (err) {
       throw this.friendlyUnreachableError(err)
     }
+    const { response } = stream
 
     if (!response.ok) {
       let errMsg = `Ollama returned ${response.status}`
@@ -33,10 +39,12 @@ export class OllamaProvider extends LlmProvider {
         const errBody = await response.text()
         if (errBody) errMsg += `: ${errBody.slice(0, 500)}`
       } catch { /* ignore */ }
+      stream.dispose()
       throw new Error(errMsg)
     }
 
     if (!response.body) {
+      stream.dispose()
       throw new Error('Ollama returned no response body')
     }
 
@@ -47,8 +55,18 @@ export class OllamaProvider extends LlmProvider {
     try {
       let remainder = ''
       while (true) {
-        const { done, value } = await reader.read()
+        let chunk: Awaited<ReturnType<typeof reader.read>>
+        try {
+          chunk = await reader.read()
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'TimeoutError') {
+            throw new Error(`Ollama stream stalled (no data within ${req.timeouts?.idleMs ?? 30000}ms)`)
+          }
+          throw err
+        }
+        const { done, value } = chunk
         if (done) break
+        stream.progress()
 
         remainder += decoder.decode(value, { stream: true })
         const lines = remainder.split('\n')
@@ -75,6 +93,7 @@ export class OllamaProvider extends LlmProvider {
         } catch { /* trailing garbage */ }
       }
     } finally {
+      stream.dispose()
       reader.releaseLock()
     }
 

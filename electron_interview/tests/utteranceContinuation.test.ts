@@ -194,6 +194,31 @@ describe('utterance continuation', () => {
     expect(fired).toEqual(['What is Node.js?'])
   })
 
+  it('does not keep audio of answered utterances for the rest of the session', () => {
+    // Regression: every segment used to be pushed onto a list that nothing
+    // read and only a capture restart cleared (~37 KB per second of speech).
+    for (let i = 0; i < 20; i++) {
+      workerMessage(service, { type: 'speech-start' })
+      workerMessage(service, {
+        type: 'segment',
+        data: new Int16Array(16000).buffer,
+        meta: { durationMs: 1000, trailingSilenceMs: 350, reason: 'silence' }
+      })
+      emitTranscript(`Question number ${i}?`)
+      vi.advanceTimersByTime(900)
+    }
+    expect(fired).toHaveLength(20)
+
+    let retainedBytes = 0
+    for (const value of Object.values(service as object)) {
+      if (Array.isArray(value)) {
+        for (const item of value) if (Buffer.isBuffer(item)) retainedBytes += item.length
+      }
+    }
+    // At most the latest utterance (one 32 KB segment) may still be referenced.
+    expect(retainedBytes).toBeLessThanOrEqual(32000)
+  })
+
   it('does not treat a cap split as the speaker stopping', () => {
     workerMessage(service, { type: 'speech-start' })
     workerMessage(service, {
@@ -205,5 +230,75 @@ describe('utterance continuation', () => {
     emitTranscript('Tell me about your project')
     vi.advanceTimersByTime(900)
     expect(fired).toEqual([]) // still speaking: hold
+  })
+})
+
+describe('utterance continuation: onset hint (activity)', () => {
+  let service: AudioService
+  let fired: string[]
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    fired = []
+    service = new AudioService({ mode: 'whisper' }, false)
+    service.setWindow(makeWindow())
+    service.setOnFinalTranscript((text) => fired.push(text))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    service.destroy()
+  })
+
+  const segment = (): void =>
+    workerMessage(service, {
+      type: 'segment',
+      data: new Int16Array(1600).buffer,
+      meta: { durationMs: 100, trailingSilenceMs: 350, reason: 'silence' }
+    })
+
+  it('holds a pending commit when a resuming speaker is about to be confirmed', () => {
+    workerMessage(service, { type: 'speech-start' })
+    segment()
+    sttEvents.get('transcript')?.('What is the difference between?', true)
+    // Commit due ~550ms from now (900ms grace from end-of-speech)...
+    vi.advanceTimersByTime(500)
+    workerMessage(service, { type: 'activity' }) // first loud frame of part two
+    vi.advanceTimersByTime(100) // the original commit time passes
+    expect(fired).toEqual([])
+    workerMessage(service, { type: 'speech-start' }) // confirmed: a continuation
+    expect(fired).toEqual([])
+  })
+
+  it('commits after the hold if the hint was only a blip', () => {
+    workerMessage(service, { type: 'speech-start' })
+    segment()
+    sttEvents.get('transcript')?.('What is a closure?', true)
+    vi.advanceTimersByTime(500)
+    workerMessage(service, { type: 'activity' })
+    vi.advanceTimersByTime(299)
+    expect(fired).toEqual([])
+    vi.advanceTimersByTime(2)
+    expect(fired).toEqual(['What is a closure?'])
+  })
+
+  it('does not delay a commit when nothing stirs after the question', () => {
+    workerMessage(service, { type: 'speech-start' })
+    segment()
+    sttEvents.get('transcript')?.('What is a closure?', true)
+    vi.advanceTimersByTime(900)
+    expect(fired).toEqual(['What is a closure?'])
+  })
+
+  it('holds when the hint arrived before the transcript did', () => {
+    workerMessage(service, { type: 'speech-start' })
+    segment()
+    vi.advanceTimersByTime(850)
+    workerMessage(service, { type: 'activity' }) // speaker resumes before whisper returns
+    sttEvents.get('transcript')?.('How would you design?', true)
+    vi.advanceTimersByTime(100)
+    expect(fired).toEqual([]) // would have committed immediately (grace used up)
+    vi.advanceTimersByTime(250)
+    expect(fired).toEqual(['How would you design?'])
   })
 })

@@ -11,7 +11,7 @@ asarUnpack:
 npmRebuild: true
 # Shared resources. Platform sections below append their own whisper binaries.
 extraResources:
-  - from: .env
+  - from: config/app.env
     to: .env
   - from: projects.json
     to: projects.json
@@ -46,6 +46,26 @@ win:
       to: whisper.cpp/build/bin/Release/VCRUNTIME140_1.dll
     - from: ../whisper.cpp/build/bin/Release/VCOMP140.DLL
       to: whisper.cpp/build/bin/Release/VCOMP140.DLL
+    # GPU builds of whisper-server; the app tries CUDA, then Vulkan, then the
+    # CPU build above. Each start-up self-tests, so a machine that cannot run
+    # one falls through to the next. Build both before packaging (README).
+    # Vulkan (~50 MB): any GPU with a Vulkan driver (NVIDIA, AMD, Intel). The
+    # driver's vulkan-1.dll is used; never bundle one.
+    - from: ../whisper.cpp/build-vulkan/bin/Release
+      to: whisper.cpp/build-vulkan/bin/Release
+      filter: [whisper-server.exe, "*.dll"]
+    # CUDA (~57 MB): only runs where CUDA 13 cuBLAS is installed (the toolkit);
+    # NVIDIA's ~500 MB cuBLAS is deliberately not bundled.
+    - from: ../whisper.cpp/build-cuda/bin/Release
+      to: whisper.cpp/build-cuda/bin/Release
+      filter: [whisper-server.exe, "*.dll"]
+    # The MSVC/OpenMP runtime next to each GPU build, as for the CPU build.
+    - from: ../whisper.cpp/build/bin/Release
+      to: whisper.cpp/build-vulkan/bin/Release
+      filter: [MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll, VCOMP140.DLL]
+    - from: ../whisper.cpp/build/bin/Release
+      to: whisper.cpp/build-cuda/bin/Release
+      filter: [MSVCP140.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll, VCOMP140.DLL]
 # macOS: build on a Mac. No `arch` is set, so the build targets the host's
 # architecture -- the same one the whisper.cpp binaries below were compiled for.
 # Notarization runs when APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER (or

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { WhisperServerProvider } from '../src/main/stt/WhisperServerProvider'
+import { WhisperServerProvider, pickVulkanDevice } from '../src/main/stt/WhisperServerProvider'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -323,5 +323,67 @@ describe('WhisperServerProvider', () => {
       await vi.waitFor(() => expect(events).toHaveLength(1))
       expect(events[0].text).toBe('real words')
     })
+  })
+
+  describe('start-up self-test (GPU builds)', () => {
+    const gpuProvider = (): WhisperServerProvider =>
+      new WhisperServerProvider({
+        name: 'whisper-server-vulkan',
+        modelPath: '/models/ggml-small.en.bin',
+        binaryPath: 'whisper-server',
+        selfTest: true
+      })
+
+    it('transcribes a second of silence before reporting ready', async () => {
+      const provider = gpuProvider()
+      await provider.start()
+      const inference = mocks.fetch.mock.calls.filter((c) => String(c[0]).includes('/inference'))
+      expect(inference).toHaveLength(1)
+    })
+
+    it('rejects start() and kills the server when the self-test fails', async () => {
+      const proc = new FakeProcess()
+      mocks.spawn.mockImplementation(() => proc)
+      const base = mocks.fetch.getMockImplementation()!
+      mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes('/inference')) return { ok: false, status: 500, json: async () => ({}) }
+        return base(url, init)
+      })
+      const provider = gpuProvider()
+      await expect(provider.start()).rejects.toThrow('whisper-server-vulkan self-test failed: HTTP 500')
+      expect(proc.killed).toBe(true)
+    })
+
+    it('rejects start() on a DLL-load failure even when an error listener is attached', async () => {
+      // A restart: FallbackSTTEngine's forwarding listener already exists, which
+      // used to swallow the failure and keep a dead engine as current.
+      const proc = new FakeProcess()
+      mocks.spawn.mockImplementation(() => {
+        setTimeout(() => proc.emit('exit', 0xc0000135), 0)
+        return proc
+      })
+      mocks.fetch.mockImplementation(async () => ({ ok: false, status: 503, json: async () => ({}) }))
+      const provider = gpuProvider()
+      provider.on('error', () => {})
+      await expect(provider.start()).rejects.toThrow('cannot load a required DLL')
+    })
+  })
+})
+
+describe('pickVulkanDevice', () => {
+  const hybrid = [
+    'ggml_vulkan: Found 2 Vulkan devices:',
+    'ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (Intel Corporation) | uma: 1 | fp16: 1 | bf16: 0 | warp size: 32',
+    'ggml_vulkan: 1 = NVIDIA GeForce RTX 3050 Laptop GPU (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | warp size: 32',
+    "whisper_init_from_file_with_params_no_state: failed to open 'x.bin'"
+  ].join('\n')
+
+  it('picks the discrete GPU on a hybrid laptop (integrated listed first)', () => {
+    expect(pickVulkanDevice(hybrid)).toBe(1)
+  })
+
+  it('keeps the default device when there is only an integrated GPU or no listing', () => {
+    expect(pickVulkanDevice('ggml_vulkan: 0 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | fp16: 1')).toBeUndefined()
+    expect(pickVulkanDevice('ggml_vulkan: No devices found.')).toBeUndefined()
   })
 })

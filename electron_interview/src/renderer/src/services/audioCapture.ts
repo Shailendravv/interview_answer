@@ -1,7 +1,21 @@
+import { StreamingResampler } from '../../../shared/audio/resampler'
+
 const TARGET_RATE = 16000
 const CHANNELS = 1
 const SILENCE_TIMEOUT_MS = 3000
 const SILENCE_RMS_THRESHOLD = 0.005
+
+// Chromium enables echo cancellation, noise suppression and auto-gain on
+// capture tracks unless told otherwise -- including the system-loopback track
+// from getDisplayMedia. Echo cancellation subtracts what the PC is playing,
+// which on loopback IS the interviewer, and noise suppression eats
+// fricatives. Measured live on the user's recording: processing on turned
+// "What is Node.js?" into "What is more, yes?"; off restored it.
+const NO_VOICE_PROCESSING: MediaTrackConstraints = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false
+}
 
 let mediaStream: MediaStream | null = null
 let audioContext: AudioContext | null = null
@@ -9,6 +23,7 @@ let source: MediaStreamAudioSourceNode | null = null
 let highpass: BiquadFilterNode | null = null
 let processor: ScriptProcessorNode | null = null
 let captureRate = TARGET_RATE
+let resampler: StreamingResampler | null = null
 let logTimer = 0
 let silentSince: number | null = null
 let silentWarningSent = false
@@ -36,8 +51,17 @@ async function initFromStream(stream: MediaStream, captureSource: 'system' | 'mi
   audioContext = new AudioContext()
   source = audioContext.createMediaStreamSource(stream)
   captureRate = audioContext.sampleRate
+  // One instance per capture: it carries filter history across blocks.
+  resampler = captureRate !== TARGET_RATE ? new StreamingResampler(captureRate, TARGET_RATE) : null
   console.log(`[audio] Capture rate: ${captureRate} Hz`)
   console.log(`[audio] Capture path: ${captureSource === 'system' ? 'system-loopback' : 'mic'}`)
+  const settings = stream.getAudioTracks()[0]?.getSettings()
+  if (settings) {
+    console.log(
+      `[audio] Track processing: echoCancellation=${settings.echoCancellation} ` +
+        `noiseSuppression=${settings.noiseSuppression} autoGainControl=${settings.autoGainControl}`
+    )
+  }
   window.dispatchEvent(new CustomEvent('audio:source', { detail: captureSource }))
 
   highpass = audioContext.createBiquadFilter()
@@ -48,22 +72,9 @@ async function initFromStream(stream: MediaStream, captureSource: 'system' | 'mi
   processor = audioContext.createScriptProcessor(bufferSize, CHANNELS, CHANNELS)
 
   processor.onaudioprocess = (event): void => {
-    let input = event.inputBuffer.getChannelData(0)
-
-    if (captureRate !== TARGET_RATE) {
-      const ratio = captureRate / TARGET_RATE
-      const outputLen = Math.floor(input.length / ratio)
-      const out = new Float32Array(outputLen)
-      for (let i = 0; i < outputLen; i++) {
-        const pos = i * ratio
-        const idx = Math.floor(pos)
-        const frac = pos - idx
-        out[i] = idx + 1 < input.length
-          ? input[idx] * (1 - frac) + input[idx + 1] * frac
-          : input[idx]
-      }
-      input = out
-    }
+    let input: Float32Array = event.inputBuffer.getChannelData(0)
+    if (resampler) input = resampler.process(input)
+    if (input.length === 0) return
 
     const rms = computeRms(input)
     logTimer++
@@ -114,7 +125,10 @@ export async function startCapture(): Promise<void> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       sampleRate: { ideal: TARGET_RATE },
-      channelCount: CHANNELS
+      channelCount: CHANNELS,
+      // The mic fallback listens to the interviewer through the speakers;
+      // echo cancellation would remove exactly that.
+      ...NO_VOICE_PROCESSING
     }
   })
   await initFromStream(stream, 'mic')
@@ -122,7 +136,7 @@ export async function startCapture(): Promise<void> {
 
 export async function startSystemCapture(): Promise<void> {
   teardownActiveCapture()
-  const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
+  const stream = await navigator.mediaDevices.getDisplayMedia({ audio: NO_VOICE_PROCESSING, video: true })
   stream.getVideoTracks().forEach((t) => t.stop())
 
   if (stream.getAudioTracks().length === 0) {
@@ -167,6 +181,7 @@ export function stopCapture(): void {
   source = null
   highpass = null
   processor = null
+  resampler = null
   silentSince = null
   silentWarningSent = false
 

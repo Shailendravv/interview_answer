@@ -318,3 +318,29 @@ describe('VADProcessor on real interview audio', () => {
     expect(withPreRoll.data.length).toBeGreaterThan(withoutPreRoll.data.length)
   })
 })
+
+describe('VADProcessor onset hint', () => {
+  it('signals the first loud frame of a possible onset once, before speech-start', () => {
+    const vad = new VADProcessor()
+    const events: string[] = []
+    vad.setOnActivity(() => events.push('activity'))
+    vad.setOnSpeechStart(() => events.push('speech-start'))
+    const loud = new Int16Array(512).fill(3000)
+    const quiet = new Int16Array(512)
+    vad.processChunk(quiet)
+    for (let i = 0; i < 4; i++) vad.processChunk(loud)
+    expect(events).toEqual(['activity', 'speech-start'])
+  })
+
+  it('signals again after a blip falls back to silence', () => {
+    const vad = new VADProcessor()
+    let n = 0
+    vad.setOnActivity(() => n++)
+    const loud = new Int16Array(512).fill(3000)
+    const quiet = new Int16Array(512)
+    vad.processChunk(loud)
+    vad.processChunk(quiet)
+    vad.processChunk(loud)
+    expect(n).toBe(2)
+  })
+})

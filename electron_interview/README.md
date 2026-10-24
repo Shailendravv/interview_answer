@@ -53,8 +53,16 @@ cp .env.example .env
 | `WHISPER_SERVER_BINARY_PATH` | No | `whisper.cpp/build/bin/Release/whisper-server.exe` | Path to whisper-server.exe (persistent HTTP engine, lower latency) |
 | `WHISPER_SERVER_HOST` | No | `127.0.0.1` | whisper-server host |
 | `WHISPER_SERVER_PORT` | No | `8080` | whisper-server port |
+| `WHISPER_GPU` | No | `1` | GPU transcription when present: `build-cuda`, then `build-vulkan`, then the CPU build. A GPU build that fails its start-up self-test is skipped. `0` = CPU only; `cuda` / `vulkan` = only that one |
+| `WHISPER_CUDA_SERVER_BINARY_PATH` | No | auto | Explicit path to a CUDA whisper-server build |
+| `WHISPER_VULKAN_SERVER_BINARY_PATH` | No | auto | Explicit path to a Vulkan whisper-server build |
+| `STT_LANGUAGE` | No | `en` | Whisper decode language (`hi`, `auto`, …). Needs a multilingual model such as `ggml-large-v3-turbo.bin`; `*.en` models force `en` |
+| `LLM_MAX_TOKENS` | No | `768` | Answer length cap sent to the model (Ollama and Groq) |
+| `LLM_TEMPERATURE` | No | `0.7` | Answer sampling temperature |
+| `LLM_GROUNDED_TEMPERATURE` | No | `0.3` | Temperature for answers built on a project's context (your own work: invented details cost most) |
+| `OLLAMA_NUM_CTX` | No | `8192` | Ollama context window for every request (Ollama 0.30 defaults to 32768, ~0.75 GB more VRAM) |
 | `GROQ_API_KEY` | No | — | Groq API key (free tier) |
-| `GROQ_MODEL` | No | `llama-3.1-8b-instant` | Groq model ID — **the single place to change** (e.g. `qwen/qwen3.6-27b` for Qwen 3.6 27B) if Groq deprecates the model; no code edits needed |
+| `GROQ_MODEL` | No | `qwen/qwen3.8-27b` | Groq model ID — **the single place to change** if Groq deprecates the model; no code edits needed. Qwen models are sent `reasoning_effort: none`. On a 429 (free tier: ~8K tokens/min) Groq is parked for its `Retry-After` and Ollama answers meanwhile |
 | `CEREBRAS_API_KEY` | No | — | Cerebras API key |
 | `SAMBANOVA_API_KEY` | No | — | SambaNova API key |
 | `GEMINI_API_KEY` | No | — | Google Gemini API key |
@@ -65,7 +73,7 @@ At minimum, no API keys are required — the app runs with:
 - **whisper.cpp** for STT (or browser mic capture via getUserMedia)
 - **Ollama** with `qwen2.5-coder:1.5b` for both routing and generation fallback
 
-For better quality generation, add at least one cloud provider API key. **Answer generation defaults to local Ollama** (`qwen2.5-coder:1.5b`). Use the model dropdown in the UI (bottom status bar) to switch answers to **Groq** (default model: `llama-3.1-8b-instant`) when you want a bigger model for coding questions. Routing, summarization, and project-doc retrieval always stay on local Ollama.
+For better quality generation, add at least one cloud provider API key. **Answer generation defaults to local Ollama** (`qwen2.5-coder:1.5b`). Use the model dropdown in the UI (bottom status bar) to switch answers to **Groq** (default model: `qwen/qwen3.8-27b`) when you want a bigger model for coding questions. Routing, summarization, and project-doc retrieval always stay on local Ollama.
 
 > **Groq Qwen 3.6 27B**: free on the Groq free plan (no credit card), rate-limited to 30 RPM / 1K req/day / 200K tokens/day. It is a **preview** model — if Groq deprecates it, just update `GROQ_MODEL` in `.env` and restart.
 
@@ -145,6 +153,16 @@ WHISPER_MODEL_PATH=D:\path\to\whisper.cpp\models\ggml-small.en.bin
 ```
 
 If no binary or model is found, whisper is automatically skipped — no crash.
+
+**GPU transcription:** the app tries `build-cuda`, then `build-vulkan`, then the CPU `build`, using the first one that starts and passes a one-second self-test. Measured on an RTX 3050 laptop (synthetic set, `bench/`): CPU ~8.2 s per question, CUDA 213 ms, Vulkan 173 ms (Vulkan on the Iris Xe iGPU: 1.7 s); WER is the same on all of them.
+
+- **CUDA** (NVIDIA, needs CUDA 13 cuBLAS on `PATH` at run time): `cmake -B build-cuda -DGGML_CUDA=1 && cmake --build build-cuda --config Release --target whisper-server`.
+- **Vulkan** (any GPU with a Vulkan driver; nothing extra at run time): needs `glslc`, the Vulkan headers and `vulkan-1.lib` at build time. Either install the LunarG Vulkan SDK (admin), or unpack these conda-forge packages into `whisper.cpp/.toolchains/vulkan/root` without admin: `shaderc`, `glslang`, `spirv-tools`, `spirv-headers`, `libvulkan-loader`, `libvulkan-headers`. Then, with `T=whisper.cpp/.toolchains/vulkan/root/Library`:
+  `cmake -B build-vulkan -DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DCMAKE_PREFIX_PATH=$T -DVulkan_INCLUDE_DIR=$T/include -DVulkan_LIBRARY=$T/lib/vulkan-1.lib -DVulkan_GLSLC_EXECUTABLE=$T/bin/glslc.exe && cmake --build build-vulkan --config Release --target whisper-server`.
+  On hybrid laptops the app picks the discrete GPU itself (ggml-vulkan lists the integrated one first).
+- `npm run dist` bundles all three builds (`electron-builder.yml`); build the GPU ones first.
+
+**Packaged builds** ship `config/app.env` (secret-free defaults) as `resources/.env`. Put API keys and personal overrides in `%APPDATA%\<app>\.env`; they override the bundled defaults key by key.
 
 > **VRAM note**: `ggml-small.en` (~240 MB) + Ollama `qwen2.5-coder:1.5b` (~1.2 GB) fit on 4 GB VRAM. If you hit OOM, switch to `ggml-base.en.bin` (lighter, faster).
 

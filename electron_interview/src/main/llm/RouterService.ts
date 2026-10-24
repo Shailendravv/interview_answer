@@ -22,6 +22,13 @@ export function setRouterProjectList(list: string): void {
   routerProjectList = list
 }
 
+/** Opens by asking what something is / how it works, rather than posing a task. */
+const CONCEPTUAL_OPENER =
+  /^\s*(?:(?:so|okay|ok|and|now|alright)[,\s]+)?(?:what\s+(?:is|are|was|were)\b|what's\b|what does\b|what do you (?:mean|understand) by\b|define\b|explain\b|describe\b|(?:the\s+)?difference between\b|how does\b|how do\b(?!\s+you\b))/i
+/** Asks for something to be built, solved, designed or analysed -- keeps the task template. */
+const PROBLEM_CUE =
+  /\b(implement\w*|write|code it|build|design\w*|architect\w*|solve|debug\w*|optimi[sz]\w*|refactor\w*|how would you|how will you|how can you|algorithm|complexity|leetcode|scale|scaling)\b/i
+
 const OOP_PATTERN = /\b(oops?|object[ -]?orient(ed)?)\b/i
 const OOP_CONCEPTUAL = /\b(what is|what are|explain|define|concept|pillars|principles|basics|introduction)\b/i
 const OOP_IMPLEMENTATION = /\bimplement(s|ed|ing|ation)?\b|\b(write|design|build|create|code|develop|solve|construct)\b/i
@@ -30,7 +37,7 @@ const CATEGORY_KEYWORDS: { category: RouterOutput['category']; patterns: RegExp[
   {
     category: 'coding',
     patterns: [
-      /implement|write code|function|algorithm|leetcode|complexity|bug|debug|error|syntax|compile|refactor|optimize|test|deploy|config|async|promise|callback|event loop|hoisting|closure|prototype|oop|solid|rest|graphql|sql|nosql|docker|kubernetes|aws/i
+      /implement|write code|function|algorithm|leetcode|two sum|linked list|binary (?:search )?tree|palindrom|subarray|substring|hash ?map|dynamic programming|complexity|bug|debug|error|syntax|compile|refactor|optimize|test|deploy|config|async|promise|callback|event loop|hoisting|closure|prototype|oop|solid|rest|graphql|sql|nosql|docker|kubernetes|aws/i
     ]
   },
   {
@@ -97,7 +104,7 @@ export class RouterService {
     options: { llmEnabled?: boolean } = {}
   ) {
     this.router = router
-    // The 0.5b LLM classifier costs a full local roundtrip on the hot path;
+    // The LLM classifier (the router provider's model, qwen2.5-coder:1.5b) costs a full local roundtrip on the hot path;
     // deterministic routing (fastRoute/OOP/regex) covers typical phrasing, so
     // the classifier is opt-in via ROUTER_LLM_ENABLED=1.
     this.llmEnabled = options.llmEnabled ?? false
@@ -206,7 +213,9 @@ export class RouterService {
 
   private async llmRoute(transcript: string): Promise<RouterOutput> {
     const req = {
-      model: 'qwen2.5-coder:0.5b',
+      // OllamaProvider always runs its own configured model (1.5b); this used
+      // to say 0.5b, a model that is never pulled and never ran.
+      model: 'qwen2.5-coder:1.5b',
       messages: [{ role: 'user', content: buildRouterPrompt() + '\n' + transcript }],
       stream: false,
       maxTokens: 150,
@@ -263,7 +272,16 @@ export class RouterService {
       return 'general'
     }
     for (const { category, patterns } of CATEGORY_KEYWORDS) {
-      if (patterns.some((p) => p.test(text))) return category
+      if (!patterns.some((p) => p.test(text))) continue
+      // The same template-fit rule, generalised: "What is the CAP theorem?" or
+      // "Explain the event loop" matched a coding/system-design keyword but
+      // asks for a concept, which the Problem/Approach/Code and Requirements/
+      // Components/Database templates cannot express (5 of 10 conceptual
+      // questions in bench/fixtures/routing-cases.json were mis-templated).
+      if ((category === 'coding' || category === 'system_design') && CONCEPTUAL_OPENER.test(text) && !PROBLEM_CUE.test(text)) {
+        return 'general'
+      }
+      return category
     }
     return 'general'
   }

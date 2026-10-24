@@ -165,3 +165,72 @@ describe('ContextService summarization deferral', () => {
     }
   })
 })
+
+describe('ContextService summarization bounds', () => {
+  const pair = async (ctx: ContextService, i: number): Promise<void> => {
+    await ctx.addInteraction(`Question ${i}: ` + 'x'.repeat(400), `Answer ${i}: ` + 'y'.repeat(1200))
+  }
+
+  it('summarizes once per batch of newly aged messages, not after every answer', async () => {
+    const summarizer = makeSummarizer()
+    const ctx = new ContextService(makeDb(), summarizer)
+    await ctx.startNewInterview('test')
+
+    for (let i = 0; i < 5; i++) await pair(ctx, i)
+    await flushAsync()
+    const afterFirst = (summarizer.generate as ReturnType<typeof vi.fn>).mock.calls.length
+    expect(afterFirst).toBe(1)
+
+    // One more pair ages only 2 messages: not enough to re-summarize.
+    await pair(ctx, 5)
+    await flushAsync()
+    expect((summarizer.generate as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1)
+
+    // A second pair makes 4 newly aged messages: summarize again.
+    await pair(ctx, 6)
+    await flushAsync()
+    expect((summarizer.generate as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+  })
+
+  it('feeds only the previous summary plus newly aged messages, capped, with a token limit', async () => {
+    const summarizer = makeSummarizer()
+    const ctx = new ContextService(makeDb(), summarizer)
+    await ctx.startNewInterview('test')
+    for (let i = 0; i < 5; i++) await pair(ctx, i)
+    await flushAsync()
+    await pair(ctx, 5)
+    await pair(ctx, 6)
+    await flushAsync()
+
+    const calls = (summarizer.generate as ReturnType<typeof vi.fn>).mock.calls
+    const second = calls[1][0] as { messages: { content: string }[]; maxTokens: number }
+    const prompt = second.messages[0].content
+    expect(second.maxTokens).toBe(150)
+    expect(prompt).toContain('A concise summary of the interview topics so far.')
+    expect(prompt).not.toContain('Question 0:') // already folded into the previous summary
+    expect(prompt).toContain('Question 2:')
+    expect(prompt.length).toBeLessThan(4000)
+  })
+
+  it('cancels an in-flight summary when a new answer starts', async () => {
+    let seenSignal: AbortSignal | undefined
+    const summarizer = {
+      generate: vi.fn(async function* (req: { signal?: AbortSignal }) {
+        seenSignal = req.signal
+        await new Promise((r) => setTimeout(r, 50))
+        if (req.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+        yield 'late summary'
+      })
+    } as unknown as OllamaProvider
+    const db = makeDb()
+    const ctx = new ContextService(db, summarizer)
+    await ctx.startNewInterview('test')
+    for (let i = 0; i < 5; i++) await pair(ctx, i)
+    await flushAsync()
+
+    ctx.notifyGenerationStart()
+    expect(seenSignal?.aborted).toBe(true)
+    await new Promise((r) => setTimeout(r, 80))
+    expect(db.saveSummary).not.toHaveBeenCalled()
+  })
+})

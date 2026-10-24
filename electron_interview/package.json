@@ -18,6 +18,12 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval": "node bench/run.mjs",
+    "eval:routing": "node bench/run.mjs routing",
+    "eval:answers": "node bench/run.mjs answers",
+    "eval:stt": "node bench/run.mjs stt",
+    "eval:e2e": "node bench/run.mjs e2e",
+    "eval:audio": "node bench/scripts/make-synthetic-audio.mjs",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {

@@ -42,3 +42,28 @@ describe('cleanTranscript', () => {
     )
   })
 })
+
+describe('cleanTranscript (Devanagari)', () => {
+  it('keeps Hindi words whole instead of splitting them at vowel marks', () => {
+    // The old tokenizer read "कुकी कि" as क, क, क -- a fake repetition loop.
+    expect(cleanTranscript('कुकी कि')).toBe('कुकी कि')
+    expect(cleanTranscript('प्रोसेस और थ्रेड में क्या अंतर है?')).toBe('प्रोसेस और थ्रेड में क्या अंतर है?')
+  })
+
+  it('still drops a genuine Hindi repetition loop', () => {
+    expect(cleanTranscript('नमस्ते नमस्ते नमस्ते नमस्ते')).toBeNull()
+  })
+})
+
+describe('cleanTranscript (punctuation only)', () => {
+  it('drops output with no words, as large-v3-turbo produces on noise', () => {
+    expect(cleanTranscript('. . . .')).toBeNull()
+    expect(cleanTranscript('...')).toBeNull()
+    expect(cleanTranscript(' - ? ')).toBeNull()
+  })
+
+  it('keeps short real words and numbers', () => {
+    expect(cleanTranscript('So')).toBe('So')
+    expect(cleanTranscript('42?')).toBe('42?')
+  })
+})

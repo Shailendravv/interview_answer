@@ -6,7 +6,9 @@ const BRACKETED_TAG = /\[[^\]]*\]/g
 const PAREN_ANNOTATION = /\([^)]*(?:music|applause|laughter|sfx|sound|tone|ringing|noise|static|beep|instrumental)[^)]*\)/gi
 const MUSIC_NOTES = /♪/g
 
-const TOKEN_PATTERN = /[\p{L}\p{N}]+(?:[.-][\p{L}\p{N}]+)*/gu
+// \p{M} keeps combining marks (Devanagari matras/viramas) inside a word;
+// without it "क्या" splits into fragments that can look like a repetition loop.
+const TOKEN_PATTERN = /[\p{L}\p{M}\p{N}]+(?:[.-][\p{L}\p{M}\p{N}]+)*/gu
 
 function stripNonSpeechTags(text: string): string {
   return text
@@ -40,6 +42,9 @@ export function cleanTranscript(text: string): string | null {
 
   const cleaned = stripNonSpeechTags(text)
   if (!cleaned) return null
+  // Punctuation-only output (". . . ." -- large-v3-turbo on background noise)
+  // has no words to answer.
+  if (!/[\p{L}\p{N}]/u.test(cleaned)) return null
   if (hasDominantRepetition(cleaned)) return null
 
   return cleaned

@@ -1,5 +1,11 @@
 export interface AnswerSanitizerOptions {
   refinedQuery: string
+  /**
+   * A heading the answer was prefilled with. A provider that ignores the
+   * prefill and opens with the same heading again would show it twice, so a
+   * first line equal to it is dropped.
+   */
+  skipLeadingLine?: string
 }
 
 const HEADER_MARKER = /^\s*\[(RECENT CONVERSATION HISTORY|CURRENT QUESTION|PROJECT CONTEXT|CONVERSATION HISTORY SUMMARY)/
@@ -59,9 +65,14 @@ export class AnswerSanitizer {
   private readonly refinedQuery: string
   /** Characters of the current (incomplete) line already emitted. */
   private emittedOnLine = 0
+  private readonly skipLeadingLine: string
+  /** True until the first non-blank line has been seen. */
+  private leadingPending: boolean
 
   constructor(options: AnswerSanitizerOptions) {
     this.refinedQuery = (options?.refinedQuery ?? '').trim().toLowerCase()
+    this.skipLeadingLine = (options?.skipLeadingLine ?? '').trim().toLowerCase()
+    this.leadingPending = this.skipLeadingLine.length > 0
   }
 
   push(token: string): string[] {
@@ -135,6 +146,9 @@ export class AnswerSanitizer {
     const ltrim = partial.replace(/^\s*/, '')
     if (!ltrim) return true
 
+    // A first line that may still turn out to repeat the prefilled heading.
+    if (this.leadingPending && this.skipLeadingLine.startsWith(ltrim.trimEnd().toLowerCase())) return true
+
     // A markdown heading is kept unconditionally by processLine.
     if (MARKDOWN_HEADING.test(partial)) return false
 
@@ -189,6 +203,11 @@ export class AnswerSanitizer {
     const stripped = this.stripThink(line)
     if (!stripped) return []
     line = stripped
+
+    if (this.leadingPending && line.trim()) {
+      this.leadingPending = false
+      if (line.trim().toLowerCase() === this.skipLeadingLine) return []
+    }
 
     if (this.historyRegion) {
       if (PAST_LINE.test(line)) return []

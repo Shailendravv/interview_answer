@@ -124,3 +124,32 @@ Answer about the candidate's own project.
 <candidate's contributions and outcomes>
 `
 }
+
+export const NO_PROJECT_MESSAGE =
+  'No project is currently selected. Please select a project from the Projects tab first.'
+
+/** The "## Heading" sequence a category's template mandates, in order. */
+export function templateHeadings(category: string): string[] {
+  const template = SYSTEM_PROMPTS[category] ?? SYSTEM_PROMPTS.general
+  return [...template.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim())
+}
+
+/**
+ * Restates the answer format at the end of the final user turn. The local
+ * 1.5B model ignored the system-prompt template in 90/90 measured answers;
+ * repeating it next to the question (plus the prefill below) brought strict
+ * heading compliance to 14/16 with a 512-token answer cap hit 1/16 times
+ * (bench prompt experiment). Kept short: it is paid on every question.
+ */
+export function formatReminder(category: string): string {
+  const headings = templateHeadings(category).map((h) => `## ${h}`).join('\n')
+  return (
+    `\n\nUse exactly these markdown headings, in order:\n${headings}\n` +
+    'Be concise: 1-3 short bullets or sentences per section, under 220 words in total (code excluded).'
+  )
+}
+
+/** Assistant-turn prefill: the answer starts inside the first mandated heading. */
+export function answerPrefill(category: string): string {
+  return `## ${templateHeadings(category)[0]}\n`
+}

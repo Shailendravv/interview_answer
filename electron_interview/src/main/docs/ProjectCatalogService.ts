@@ -173,16 +173,6 @@ export class ProjectCatalogService {
       .join(', ')
   }
 
-  buildClarifyBlock(): string {
-    const titles = this.bundle.projects.map((p) => `- ${p.id} — ${p.title}`).join('\n')
-    return (
-      `AVAILABLE PROJECTS:\n${titles || '- none'}\n\n` +
-      `If the question names one of these projects, answer using its context. ` +
-      `If it does not name a specific project, respond exactly: ` +
-      `"No project is currently selected. Please select a project from the Projects tab first."`
-    )
-  }
-
   getBundleForRenderer(): ProjectListPayload {
     const cards: ProjectCardData[] = this.bundle.projects.map((p) => ({
       id: p.id,

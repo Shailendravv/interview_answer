@@ -1,4 +1,4 @@
-import { config as dotenvConfig } from "dotenv";
+import { loadEnvFiles } from "./envFiles";
 import log from "electron-log/main";
 import { resolve, join } from "path";
 import { existsSync } from "fs";
@@ -22,6 +22,7 @@ import { TrayService } from "./tray/TrayService";
 import { ProjectCatalogService } from "./docs/ProjectCatalogService";
 import { IPC } from "../shared/ipcChannels";
 import { latencyTracer } from "./telemetry/LatencyTracer";
+import { generationOptionsFromEnv } from "./llm/generationOptions";
 
 // Persist every console.* call (main + renderer) to a rotating file so packaged
 // builds, which have no attached terminal, keep their diagnostics:
@@ -31,23 +32,25 @@ Object.assign(console, log.functions);
 
 function loadDotEnv(): void {
   // `resolve(__dirname, "../../.env")` only exists in dev (project root). In the
-  // packaged app __dirname lives inside app.asar, so also probe the per-user
-  // config dir and the unpacked resources dir next to the executable.
+  // packaged app __dirname lives inside app.asar; there the per-user file
+  // (%APPDATA%\<app>\.env -- API keys, personal overrides) is layered over the
+  // secret-free defaults bundled as resources/.env (config/app.env). dotenv
+  // never overrides a variable that is already set, so the first file to
+  // define a key wins and later files only fill in what is missing. (It used
+  // to stop at the first file found, so adding a user .env just for a key
+  // silently dropped every bundled setting.)
   const candidates = [
     resolve(__dirname, "../../.env"),
     resolve(app.getPath("userData"), ".env"),
     resolve(process.resourcesPath, ".env"),
   ];
-  for (const path of candidates) {
-    if (existsSync(path)) {
-      dotenvConfig({ path });
-      console.log("[env] Loaded config from", path);
-      return;
-    }
+  const loaded = loadEnvFiles(candidates);
+  for (const path of loaded) console.log("[env] Loaded config from", path);
+  if (loaded.length === 0) {
+    console.warn(
+      "[env] No .env found — Groq will be unavailable; answers use local Ollama",
+    );
   }
-  console.warn(
-    "[env] No .env found — Groq will be unavailable; answers use local Ollama",
-  );
 }
 
 loadDotEnv();
@@ -56,6 +59,53 @@ interface WhisperPaths {
   modelPath: string;
   cliBinaryPath: string;
   serverBinaryPath: string;
+}
+
+function whisperDirCandidates(): string[] {
+  const cwd = process.cwd();
+  const appPath = app.getAppPath();
+  return [
+    cwd,
+    appPath,
+    resolve(cwd, ".."),
+    resolve(appPath, ".."),
+    resolve(__dirname, "..", "..", "..", ".."),
+    resolve(__dirname, "..", "..", ".."),
+    resolve(__dirname, "..", ".."),
+  ].map((base) => resolve(base, "whisper.cpp"));
+}
+
+// GPU builds of whisper-server, tried before the CPU build when present:
+//  - build-cuda   (NVIDIA + CUDA 13 runtime): ~8.2s -> ~0.2s per question on an
+//    RTX 3050 (bench/ STT baseline);
+//  - build-vulkan (any GPU with a Vulkan driver: NVIDIA, AMD, Intel).
+// A missing runtime or unsupported GPU fails the engine's start-up self-test
+// and the next engine takes over. WHISPER_GPU=0 disables both; =cuda or
+// =vulkan keeps only that one. An explicitly configured
+// WHISPER_SERVER_BINARY_PATH is respected as-is.
+type GpuBuild = "cuda" | "vulkan";
+function resolveGpuServerPath(build: GpuBuild): string | undefined {
+  const gpu = (process.env.WHISPER_GPU || "").toLowerCase();
+  if (gpu === "0" || gpu === "false") return undefined;
+  if ((gpu === "cuda" || gpu === "vulkan") && gpu !== build) return undefined;
+  const override =
+    build === "cuda"
+      ? process.env.WHISPER_CUDA_SERVER_BINARY_PATH
+      : process.env.WHISPER_VULKAN_SERVER_BINARY_PATH;
+  if (override) return override;
+  if (process.env.WHISPER_SERVER_BINARY_PATH) return undefined;
+  // macOS builds use Metal inside the regular binary.
+  if (process.platform === "darwin") return undefined;
+
+  const isWindows = process.platform === "win32";
+  const dir = `build-${build}`;
+  const binSubdir = isWindows ? [dir, "bin", "Release"] : [dir, "bin"];
+  const exe = isWindows ? ".exe" : "";
+  for (const whisperDir of whisperDirCandidates()) {
+    const candidate = resolve(whisperDir, ...binSubdir, `whisper-server${exe}`);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function resolveWhisperPaths(): WhisperPaths {
@@ -72,27 +122,13 @@ function resolveWhisperPaths(): WhisperPaths {
     };
   }
 
-  const cwd = process.cwd();
-  const appPath = app.getAppPath();
-
-  const candidates: string[] = [
-    cwd,
-    appPath,
-    resolve(cwd, ".."),
-    resolve(appPath, ".."),
-    resolve(__dirname, "..", "..", "..", ".."),
-    resolve(__dirname, "..", "..", ".."),
-    resolve(__dirname, "..", ".."),
-  ];
-
   // MSVC (multi-config) builds put binaries in build/bin/Release/*.exe;
   // single-config builds (Makefiles/Ninja on macOS) put them in build/bin/.
   const isWindows = process.platform === "win32";
   const binSubdir = isWindows ? ["build", "bin", "Release"] : ["build", "bin"];
   const exeSuffix = isWindows ? ".exe" : "";
 
-  for (const base of candidates) {
-    const whisperDir = resolve(base, "whisper.cpp");
+  for (const whisperDir of whisperDirCandidates()) {
     const model = resolve(whisperDir, "models", "ggml-small.en.bin");
     const cliBin = resolve(whisperDir, ...binSubdir, `whisper-cli${exeSuffix}`);
     const serverBin = resolve(
@@ -143,6 +179,10 @@ const whisperPaths = resolveWhisperPaths();
 console.log("[whisper] Resolved model:", whisperPaths.modelPath);
 console.log("[whisper] Resolved CLI binary:", whisperPaths.cliBinaryPath);
 console.log("[whisper] Resolved server binary:", whisperPaths.serverBinaryPath);
+const cudaServerBinaryPath = resolveGpuServerPath("cuda");
+const vulkanServerBinaryPath = resolveGpuServerPath("vulkan");
+console.log("[whisper] CUDA server binary:", cudaServerBinaryPath ?? "not used");
+console.log("[whisper] Vulkan server binary:", vulkanServerBinaryPath ?? "not used");
 
 // VAD_PAD_FRAMES counted whatever chunk the capture layer happened to send
 // (85ms @48kHz, 256ms @16kHz-native), so "10 frames" meant anywhere from 853ms
@@ -174,6 +214,8 @@ const sttConfig = {
   whisperModelPath: whisperPaths.modelPath,
   whisperBinaryPath: whisperPaths.cliBinaryPath,
   whisperServerBinaryPath: whisperPaths.serverBinaryPath,
+  whisperCudaServerBinaryPath: cudaServerBinaryPath,
+  whisperVulkanServerBinaryPath: vulkanServerBinaryPath,
   whisperServerHost: process.env.WHISPER_SERVER_HOST || "127.0.0.1",
   whisperServerPort: Number(process.env.WHISPER_SERVER_PORT) || 8080,
   whisperInitialPrompt:
@@ -183,6 +225,9 @@ const sttConfig = {
     // biases short-utterance decoding: whisper injects those tokens into the
     // transcript and skips low-content lead-ins ("What is …").
     "Interview question and answer conversation, clear English speech.",
+  // "en" (default) | "hi" | "auto" | ... -- non-English needs a multilingual
+  // model (e.g. ggml-large-v3-turbo.bin via WHISPER_MODEL_PATH).
+  whisperLanguage: process.env.STT_LANGUAGE || undefined,
   whisperNoSpeechThreshold:
     Number(process.env.WHISPER_NO_SPEECH_THRESHOLD) || 0.6,
   silenceTimeoutMs: Number(process.env.SILENCE_TIMEOUT_MS) || 750,
@@ -263,7 +308,7 @@ ipcMain.handle("desktop:sources", async () => {
 });
 ipcMain.handle("app:config", () => ({
   micFallbackEnabled: MIC_FALLBACK_ENABLED,
-  groqModel: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+  groqModel: process.env.GROQ_MODEL || "qwen/qwen3.8-27b",
   groqAvailable: Boolean(process.env.GROQ_API_KEY),
 }));
 
@@ -423,6 +468,7 @@ async function createWindow(): Promise<void> {
   // Initialize orchestrator (LLM classifier router is opt-in: ROUTER_LLM_ENABLED=1)
   orchestrator = new Orchestrator(llmOrchestrator, projectCatalog, {
     routerLlmEnabled: process.env.ROUTER_LLM_ENABLED === "1",
+    ...generationOptionsFromEnv(),
   });
   orchestrator.setWindow(win);
   if (pendingGenerationModel) {

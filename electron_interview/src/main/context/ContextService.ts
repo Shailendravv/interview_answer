@@ -12,6 +12,13 @@ const MAX_HISTORY_ANSWER_CHARS = 400
 // summary racing the next question would queue behind/ahead of it and inflate
 // TTFT. Wait for a quiet window instead.
 const SUMMARY_IDLE_DELAY_MS = 5000
+// Summarization used to re-run after EVERY answer once history passed the
+// threshold, over ALL older messages (input grew to 15k characters within 10
+// turns in the bench session). Now it folds only messages that aged out of the
+// recent window since the last summary into the previous summary, once at
+// least this many have accumulated, with each message's text capped.
+const SUMMARY_MIN_NEW_MESSAGES = 4
+const SUMMARY_MESSAGE_CHARS = 600
 
 interface QAPair {
   question: string
@@ -36,6 +43,10 @@ export class ContextService {
   private generationBusy = false
   private lastGenerationDoneAt = 0
   private summarizationTimer: ReturnType<typeof setTimeout> | null = null
+  /** How many stored messages the current summary already covers. */
+  private summarizedCount = 0
+  /** In-flight summary; aborted when an answer starts so it never delays one. */
+  private summaryAbort: AbortController | null = null
 
   constructor(
     private db: DatabaseService,
@@ -46,6 +57,9 @@ export class ContextService {
     this.interviewId = this.db.createInterview(title)
     this.recentPairs = []
     this.summaryCache = null
+    this.summarizedCount = 0
+    this.summaryAbort?.abort()
+    this.summaryAbort = null
     return this.interviewId
   }
 
@@ -132,6 +146,13 @@ export class ContextService {
   /** Orchestrator marks the span of active answer generation. */
   notifyGenerationStart(): void {
     this.generationBusy = true
+    // The summary shares the local model with answers; an answer must not
+    // queue behind it. The aged messages stay unsummarized and are retried.
+    if (this.summaryAbort) {
+      this.summaryAbort.abort()
+      this.summaryAbort = null
+      this.scheduleSummarizationRetry()
+    }
   }
 
   notifyGenerationEnd(): void {
@@ -147,34 +168,49 @@ export class ContextService {
       return
     }
 
+    if (this.summaryAbort) return // one at a time
+
     const allMessages = this.db.getAllMessages(this.interviewId)
-    const olderMessages = allMessages.slice(0, -(RECENT_PAIRS * 2))
+    const agedCount = Math.max(0, allMessages.length - RECENT_PAIRS * 2)
+    if (agedCount - this.summarizedCount < SUMMARY_MIN_NEW_MESSAGES) return
 
-    if (olderMessages.length < 4) return
-
-    const textToSummarize = olderMessages
-      .map((m) => `${m.role}: ${m.content}`)
+    const interviewId = this.interviewId
+    const previous = this.summaryCache ?? this.db.getSummary(interviewId)
+    const newlyAged = allMessages
+      .slice(this.summarizedCount, agedCount)
+      .map((m) => `${m.role}: ${m.content.length > SUMMARY_MESSAGE_CHARS ? m.content.slice(0, SUMMARY_MESSAGE_CHARS) + '…' : m.content}`)
       .join('\n')
+    const prompt =
+      `Update the interview summary below with the new exchanges, in ${SUMMARY_TOKEN_TARGET} tokens or less. ` +
+      'Keep topics covered, technical decisions and key facts. Reply with the updated summary only.\n\n' +
+      `Summary so far:\n${previous || '(none yet)'}\n\nNew exchanges:\n${newlyAged}`
 
+    const abort = new AbortController()
+    this.summaryAbort = abort
     ;(async () => {
       try {
         const gen = this.summarizer.generate({
           model: 'qwen2.5-coder:1.5b',
-          messages: [{ role: 'user', content: `Summarize this interview conversation concisely in ${SUMMARY_TOKEN_TARGET} tokens or less. Focus on topics covered, technical decisions, and key facts mentioned.\n\n${textToSummarize}` }],
+          messages: [{ role: 'user', content: prompt }],
           stream: false,
           maxTokens: SUMMARY_TOKEN_TARGET,
-          temperature: 0.3
+          temperature: 0.3,
+          signal: abort.signal
         })
         let fullText = ''
         for await (const token of gen) {
           fullText += token
         }
-        if (fullText && this.interviewId) {
-          const trimmed = fullText.trim()
+        const trimmed = fullText.trim()
+        if (trimmed && !abort.signal.aborted && this.interviewId === interviewId) {
           this.summaryCache = trimmed
-          this.db.saveSummary(this.interviewId, trimmed)
+          this.summarizedCount = agedCount
+          this.db.saveSummary(interviewId, trimmed)
         }
-      } catch { /* background summarization failed */ }
+      } catch { /* background summarization failed or was cancelled */ }
+      finally {
+        if (this.summaryAbort === abort) this.summaryAbort = null
+      }
     })()
   }
 

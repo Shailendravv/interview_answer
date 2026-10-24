@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "source": "recorded",
+  "representative": true,
+  "notes": "Copy to bench/audio/local/manifest.json (git-ignored) and list your recordings. file paths are relative to the manifest. startMs/endMs are optional: without them accuracy is still scored, but endpoint latency and split/merge detection are not.",
+  "items": [
+    {
+      "id": "int01-q03",
+      "file": "int01-q03.wav",
+      "scenario": "single",
+      "language": "en",
+      "referenceScript": "latin",
+      "speaker": "interviewer-a",
+      "accent": "en-IN",
+      "condition": "teams-loopback",
+      "verified": true,
+      "questions": [
+        { "reference": "Can you walk me through how you would design a rate limiter?", "startMs": 820, "endMs": 4310, "terms": ["rate limiter"] }
+      ]
+    },
+    {
+      "id": "int02-hinglish-q01",
+      "file": "int02-hinglish-q01.wav",
+      "scenario": "single",
+      "language": "hinglish",
+      "referenceScript": "latin",
+      "speaker": "interviewer-b",
+      "accent": "en-IN",
+      "condition": "meet-loopback",
+      "verified": true,
+      "questions": [{ "reference": "React mein useEffect hook kaise kaam karta hai?", "terms": ["useEffect", "React"] }]
+    },
+    {
+      "id": "int02-hindi-q02",
+      "file": "int02-hindi-q02.wav",
+      "scenario": "single",
+      "language": "hi",
+      "referenceScript": "devanagari",
+      "speaker": "interviewer-b",
+      "accent": "hi-IN",
+      "condition": "meet-loopback",
+      "verified": true,
+      "questions": [{ "reference": "प्रोसेस और थ्रेड में क्या अंतर है?" }]
+    },
+    {
+      "id": "int01-chatter",
+      "file": "int01-chatter.wav",
+      "scenario": "non-speech",
+      "language": "en",
+      "speaker": "mixed",
+      "condition": "room noise, typing, no speech",
+      "verified": true,
+      "questions": []
+    }
+  ]
+}

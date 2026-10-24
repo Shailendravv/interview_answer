@@ -69,6 +69,7 @@ export class VADProcessor {
   /** Samples left over from the last chunk, awaiting a full analysis frame. */
   private carry: Int16Array = new Int16Array(0)
   private onSpeechStart: (() => void) | null = null
+  private onActivity: (() => void) | null = null
 
   constructor(config: Partial<VADConfig> = {}) {
     this.config = this.normalize({ ...DEFAULT_VAD_CONFIG, ...config })
@@ -86,6 +87,15 @@ export class VADProcessor {
    */
   setOnSpeechStart(cb: (() => void) | null): void {
     this.onSpeechStart = cb
+  }
+
+  /**
+   * Fires on the first loud frame of a possible onset, ~minSpeechMs before
+   * speech-start can confirm it. Lets the caller hold a pending commit for a
+   * speaker who is resuming after a mid-question pause.
+   */
+  setOnActivity(cb: (() => void) | null): void {
+    this.onActivity = cb
   }
 
   getConfig(): VADConfig {
@@ -148,6 +158,7 @@ export class VADProcessor {
       this.pushPreRoll(frame)
 
       if (rms >= this.config.speechThreshold) {
+        if (this.speechMs === 0) this.onActivity?.()
         this.speechMs += this.frameMs
         if (this.speechMs >= this.config.minSpeechMs) {
           // Seed the segment with the pre-roll so the onset -- and the frames

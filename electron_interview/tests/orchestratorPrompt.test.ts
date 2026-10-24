@@ -126,6 +126,27 @@ describe('Orchestrator prompt shape', () => {
     expect(msgs.at(-1)!.content).not.toContain(formatReminder('project_specific'))
     expect(templateHeadings('project_specific')[0]).toBe('Overview')
   })
+
+  it('names the pinned project in the question turn, but not in history', async () => {
+    const { orchestrator, requests } = setup(['It ingests invoices.\n'])
+    await orchestrator.startInterview()
+    orchestrator.setActiveProject('billing')
+    await orchestrator.processTranscript('Could you explain that project to the interviewer?', 'user')
+    await orchestrator.processTranscript('What is a closure?', 'user')
+    const first = requests[0].messages.at(-1)!.content
+    expect(first).toContain('Could you explain that project to the interviewer? (Project: Billing Platform)')
+    // The stored history turn is the question as asked.
+    const historyQuestion = requests[1].messages.find((m) => m.role === 'user')!.content
+    expect(historyQuestion).toBe('Could you explain that project to the interviewer?')
+  })
+
+  it('does not add a project name to questions without project context', async () => {
+    const { orchestrator, requests } = setup(['A closure captures scope.\n'])
+    await orchestrator.startInterview()
+    orchestrator.setActiveProject('billing')
+    await orchestrator.processTranscript('What is a closure?', 'user')
+    expect(requests[0].messages.at(-2)!.content).not.toContain('(Project:')
+  })
 })
 
 describe('generationOptionsFromEnv', () => {

@@ -73,7 +73,7 @@ At minimum, no API keys are required — the app runs with:
 - **whisper.cpp** for STT (or browser mic capture via getUserMedia)
 - **Ollama** with `qwen2.5-coder:1.5b` for both routing and generation fallback
 
-For better quality generation, add at least one cloud provider API key. **Answer generation defaults to local Ollama** (`qwen2.5-coder:1.5b`). Use the model dropdown in the UI (bottom status bar) to switch answers to **Groq** (default model: `qwen/qwen3.8-27b`) when you want a bigger model for coding questions. Routing, summarization, and project-doc retrieval always stay on local Ollama.
+For better quality generation, add at least one cloud provider API key. **Answer generation defaults to local Ollama** (`qwen2.5-coder:1.5b`). Use the model dropdown in the UI (bottom status bar) to switch answers to **Groq** (default model: `qwen/qwen3.8-27b`) when you want a bigger model for coding questions. Routing and project-doc retrieval always stay on local Ollama.
 
 > **Groq Qwen 3.6 27B**: free on the Groq free plan (no credit card), rate-limited to 30 RPM / 1K req/day / 200K tokens/day. It is a **preview** model — if Groq deprecates it, just update `GROQ_MODEL` in `.env` and restart.
 
@@ -313,7 +313,7 @@ npm run typecheck
 │   ├── main/
 │   │   ├── audio/       # Audio capture + STT pipeline
 │   │   ├── cache/       # Embedding + semantic cache
-│   │   ├── context/     # Sliding window + summarizer
+│   │   ├── context/     # Sliding window + earlier-question summary
 │   │   ├── db/          # SQLite database service
 │   │   ├── docs/        # Project docs ingestion + retrieval
 │   │   ├── llm/         # LLM providers, chain, router, circuit breaker

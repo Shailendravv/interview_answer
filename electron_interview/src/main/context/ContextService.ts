@@ -1,4 +1,3 @@
-import { OllamaProvider } from '../llm/OllamaProvider'
 import { DatabaseService } from '../db/DatabaseService'
 
 const CODE_PATTERN = /[{};\/\/\->]/
@@ -6,19 +5,15 @@ const MAX_PROMPT_TOKENS = 2500
 const TOKENS_PER_CHAR_PROSE = 0.25
 const TOKENS_PER_CHAR_CODE = 0.5
 const RECENT_PAIRS = 3
-const SUMMARY_TOKEN_TARGET = 150
 const MAX_HISTORY_ANSWER_CHARS = 400
-// Background summarization shares the local model with answer generation; a
-// summary racing the next question would queue behind/ahead of it and inflate
-// TTFT. Wait for a quiet window instead.
-const SUMMARY_IDLE_DELAY_MS = 5000
-// Summarization used to re-run after EVERY answer once history passed the
-// threshold, over ALL older messages (input grew to 15k characters within 10
-// turns in the bench session). Now it folds only messages that aged out of the
-// recent window since the last summary into the previous summary, once at
-// least this many have accumulated, with each message's text capped.
-const SUMMARY_MIN_NEW_MESSAGES = 4
-const SUMMARY_MESSAGE_CHARS = 600
+// Older history is summarised as the list of questions already asked, built
+// here instead of by the local model. The 1.5B summariser returned chat
+// replies ("Great! I'm ready to help with your questions."), a lone "```", or
+// verbatim copies of past answers cut off at its 150-token cap -- each of the
+// last six stored summaries. Injected into the system prompt, such a summary
+// was echoed back as the answer ("Sure, here's the updated summary...").
+const EARLIER_QUESTIONS = 8
+const EARLIER_QUESTION_CHARS = 120
 
 interface QAPair {
   question: string
@@ -39,27 +34,15 @@ export interface BuiltPrompt {
 export class ContextService {
   private interviewId: number | null = null
   private recentPairs: QAPair[] = []
-  private summaryCache: string | null = null
-  private generationBusy = false
-  private lastGenerationDoneAt = 0
-  private summarizationTimer: ReturnType<typeof setTimeout> | null = null
-  /** How many stored messages the current summary already covers. */
-  private summarizedCount = 0
-  /** In-flight summary; aborted when an answer starts so it never delays one. */
-  private summaryAbort: AbortController | null = null
+  /** Questions that aged out of the recent window, oldest first. */
+  private earlierQuestions: string[] = []
 
-  constructor(
-    private db: DatabaseService,
-    private summarizer: OllamaProvider
-  ) {}
+  constructor(private db: DatabaseService) {}
 
   async startNewInterview(title = ''): Promise<number> {
     this.interviewId = this.db.createInterview(title)
     this.recentPairs = []
-    this.summaryCache = null
-    this.summarizedCount = 0
-    this.summaryAbort?.abort()
-    this.summaryAbort = null
+    this.earlierQuestions = []
     return this.interviewId
   }
 
@@ -71,12 +54,9 @@ export class ContextService {
 
     this.recentPairs.push({ question, answer })
     if (this.recentPairs.length > RECENT_PAIRS) {
-      this.recentPairs.shift()
-    }
-
-    const totalTokens = this.getTotalTokens()
-    if (totalTokens > MAX_PROMPT_TOKENS * 0.8) {
-      this.triggerSummarization()
+      const q = this.recentPairs.shift()!.question.trim()
+      this.earlierQuestions.push(q.length > EARLIER_QUESTION_CHARS ? `${q.slice(0, EARLIER_QUESTION_CHARS)}…` : q)
+      if (this.earlierQuestions.length > EARLIER_QUESTIONS) this.earlierQuestions.shift()
     }
   }
 
@@ -84,10 +64,9 @@ export class ContextService {
     query: string,
     retrievedContext: string[]
   ): Promise<BuiltPrompt> {
-    const summary = this.summaryCache ?? (this.interviewId ? this.db.getSummary(this.interviewId) : null)
-
-    const summaryBlock = summary
-      ? `[CONVERSATION HISTORY SUMMARY - for context only, do NOT repeat or use as the answer]\n${summary}`
+    const summaryBlock = this.earlierQuestions.length > 0
+      ? '[CONVERSATION HISTORY SUMMARY - for context only, do NOT repeat or use as the answer]\n' +
+        `Earlier questions, already answered: ${this.earlierQuestions.join(' | ')}`
       : ''
     const contextBlock = retrievedContext.length > 0
       ? `[PROJECT CONTEXT]\n${retrievedContext.join('\n---\n')}`
@@ -143,94 +122,9 @@ export class ContextService {
     return `${answer.slice(0, MAX_HISTORY_ANSWER_CHARS)}…`
   }
 
-  /** Orchestrator marks the span of active answer generation. */
-  notifyGenerationStart(): void {
-    this.generationBusy = true
-    // The summary shares the local model with answers; an answer must not
-    // queue behind it. The aged messages stay unsummarized and are retried.
-    if (this.summaryAbort) {
-      this.summaryAbort.abort()
-      this.summaryAbort = null
-      this.scheduleSummarizationRetry()
-    }
-  }
-
-  notifyGenerationEnd(): void {
-    this.generationBusy = false
-    this.lastGenerationDoneAt = Date.now()
-  }
-
-  private triggerSummarization(): void {
-    if (!this.interviewId) return
-
-    if (this.generationBusy || Date.now() - this.lastGenerationDoneAt < SUMMARY_IDLE_DELAY_MS) {
-      this.scheduleSummarizationRetry()
-      return
-    }
-
-    if (this.summaryAbort) return // one at a time
-
-    const allMessages = this.db.getAllMessages(this.interviewId)
-    const agedCount = Math.max(0, allMessages.length - RECENT_PAIRS * 2)
-    if (agedCount - this.summarizedCount < SUMMARY_MIN_NEW_MESSAGES) return
-
-    const interviewId = this.interviewId
-    const previous = this.summaryCache ?? this.db.getSummary(interviewId)
-    const newlyAged = allMessages
-      .slice(this.summarizedCount, agedCount)
-      .map((m) => `${m.role}: ${m.content.length > SUMMARY_MESSAGE_CHARS ? m.content.slice(0, SUMMARY_MESSAGE_CHARS) + '…' : m.content}`)
-      .join('\n')
-    const prompt =
-      `Update the interview summary below with the new exchanges, in ${SUMMARY_TOKEN_TARGET} tokens or less. ` +
-      'Keep topics covered, technical decisions and key facts. Reply with the updated summary only.\n\n' +
-      `Summary so far:\n${previous || '(none yet)'}\n\nNew exchanges:\n${newlyAged}`
-
-    const abort = new AbortController()
-    this.summaryAbort = abort
-    ;(async () => {
-      try {
-        const gen = this.summarizer.generate({
-          model: 'qwen2.5-coder:1.5b',
-          messages: [{ role: 'user', content: prompt }],
-          stream: false,
-          maxTokens: SUMMARY_TOKEN_TARGET,
-          temperature: 0.3,
-          signal: abort.signal
-        })
-        let fullText = ''
-        for await (const token of gen) {
-          fullText += token
-        }
-        const trimmed = fullText.trim()
-        if (trimmed && !abort.signal.aborted && this.interviewId === interviewId) {
-          this.summaryCache = trimmed
-          this.summarizedCount = agedCount
-          this.db.saveSummary(interviewId, trimmed)
-        }
-      } catch { /* background summarization failed or was cancelled */ }
-      finally {
-        if (this.summaryAbort === abort) this.summaryAbort = null
-      }
-    })()
-  }
-
-  private scheduleSummarizationRetry(): void {
-    if (this.summarizationTimer) return
-    this.summarizationTimer = setTimeout(() => {
-      this.summarizationTimer = null
-      this.triggerSummarization()
-    }, SUMMARY_IDLE_DELAY_MS)
-  }
-
   private estimateTokens(text: string): number {
     const rate = CODE_PATTERN.test(text) ? TOKENS_PER_CHAR_CODE : TOKENS_PER_CHAR_PROSE
     return Math.ceil(text.length * rate)
-  }
-
-  private getTotalTokens(): number {
-    if (!this.interviewId) return 0
-    const messages = this.db.getAllMessages(this.interviewId)
-    return messages.reduce((sum, m) => sum + m.tokenCount, 0)
   }
 
   getInterviewId(): number | null {

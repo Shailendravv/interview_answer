@@ -61,7 +61,7 @@ export class Orchestrator {
       llmEnabled: options.routerLlmEnabled ?? false
     })
     this.dbService = new DatabaseService()
-    this.contextService = new ContextService(this.dbService, llmOrchestrator.getRouter())
+    this.contextService = new ContextService(this.dbService)
 
     const ollamaBaseUrl = llmOrchestrator['ollamaService']?.getBaseUrl() || 'http://localhost:11434'
     const projectDocsService = new ProjectDocsService(ollamaBaseUrl)
@@ -145,7 +145,6 @@ export class Orchestrator {
     // Adopt the STT-side marks (T0-T3) recorded before a genId existed.
     latencyTracer.adoptStt(genId)
     latencyTracer.mark(genId, 'T4')
-    this.contextService.notifyGenerationStart()
 
     try {
       this.sendStatus('processing')
@@ -213,6 +212,7 @@ export class Orchestrator {
 
       let contextTexts: string[] = []
       let needsProjectSelection = false
+      let promptQuery = routeResult.refined_query
 
       if (isProjectQuery) {
         const projectId = resolved.projectId ?? routeResult.project_id
@@ -221,6 +221,12 @@ export class Orchestrator {
           : undefined
         if (block) {
           contextTexts = [block]
+          // "Explain that project" / "the selected project" does not tell the
+          // local model which project is meant: with the block injected it
+          // still asked "which project is it?" in 3/3 runs. Naming the
+          // project in the question turn fixed that (3/3 answered).
+          const title = this.projectCatalog.getById(projectId!)?.title
+          if (title) promptQuery = `${promptQuery} (Project: ${title})`
           // A named project's facts belong in the project template. Routed by
           // keyword to system_design instead, the mandated "## Database"
           // section made the model invent databases for the project
@@ -264,7 +270,7 @@ export class Orchestrator {
       }
 
       const { systemExtra, turns } = await this.contextService.buildPrompt(
-        routeResult.refined_query,
+        promptQuery,
         contextTexts
       )
 
@@ -284,7 +290,6 @@ export class Orchestrator {
       }
       this.window?.webContents.send(IPC.ANSWER_ERROR, describeError(err))
     } finally {
-      this.contextService.notifyGenerationEnd()
       if (this.tokenBatcher.isActive(genId)) {
         this.isProcessing = false
         this.lastProcessedTranscript = null
